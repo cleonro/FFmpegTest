@@ -4,6 +4,12 @@
 /// 1.
 /// https://github.com/leandromoreira/ffmpeg-libav-tutorial
 ///
+///     1.1
+///     http://leixiaohua1020.github.io/#ffmpeg-development-examples
+///
+///     1.2
+///     https://slhck.info/ffmpeg-encoding-course/#/9
+///
 /// 2. (older)
 /// http://dranger.com/ffmpeg/
 ///

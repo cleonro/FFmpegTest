@@ -229,15 +229,19 @@ void FFTest::open(const char *filePath)
     {
 
         int packet_stream_index = pPacket->stream_index;
-        if(pPacket->stream_index == audio_stream_index)
+        if(packet_stream_index == audio_stream_index)
 //        if(packet_stream_index == video_stream_index)
         {
             qDebug() << m_space << m_space
                      << "AVPacket::pts " << pPacket->pts;
 
+            response = decode_packet(pPacket, pCodecContext, pFrame);
+            qDebug() << m_space << m_space << m_space
+                     << "decode_packet response: " << response;
+
             if(--how_many_packets_to_process <= 0)
             {
-                //break;
+                break;
             }
 
 
@@ -249,9 +253,61 @@ void FFTest::open(const char *filePath)
     av_frame_free(&pFrame);
 }
 
-int FFTest::decode_packet(AVPacket *, AVCodecContext *pCodecContext, AVFrame *pFrame)
+int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame)
 {
     int response = 0;
 
+    qDebug() << "\n" << Q_FUNC_INFO;
+
+    response = avcodec_send_packet(pCodecContext, pPacket);
+    if(response < 0)
+    {
+        qDebug() << m_space << "Error while sending a packet to the decoder: "
+                 << avErr2str(response).c_str();
+    }
+    qDebug() << m_space << "Packet sent to the decoder";
+
+    while(response >= 0)
+    {
+        response = avcodec_receive_frame(pCodecContext, pFrame);
+        if(response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+        {
+            if(response == AVERROR(EAGAIN))
+            {
+                qDebug() << m_space << m_space
+                         << "avcodec_receive_frame: AVERROR(EAGAIN)";
+            }
+            if(response == AVERROR_EOF)
+            {
+                qDebug() << m_space << m_space
+                         << "avcodec_receive_frame: AVERROR_EOF";
+            }
+            break;
+        }
+        else if(response < 0)
+        {
+            qDebug() << m_space << m_space
+                     << "Error while receiving a frame from the decoder: "
+                     << avErr2str(response).c_str();
+            return response;
+        }
+
+        if(response >= 0)
+        {
+//            qDebug() << m_space << m_space
+//                     << "Frame " << pCodecContext->frame_number
+//                     << " (type = " << av_get_s
+        }
+    }
+
+    qDebug() << "\n";
     return response;
+}
+
+std::string FFTest::avErr2str(int errnum)
+{
+    const int errbuf_size = 64;
+    char errbuf[errbuf_size]{0};
+    av_strerror(errnum, errbuf, errbuf_size);
+    return std::string(errbuf);
 }

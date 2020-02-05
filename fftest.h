@@ -27,7 +27,9 @@ signals:
 
 private:
     void clear();
-    int decode_packet(AVPacket *, AVCodecContext *pCodecContext, AVFrame *pFrame);
+    int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame);
+
+    std::string avErr2str(int errnum);
 
 private:
     const char *m_space;
