@@ -81,6 +81,11 @@ void FFMainWindow::on_action_Open_triggered()
     qDebug() << Q_FUNC_INFO;
     m_filePath = QFileDialog::getOpenFileName(this, "Open AAC file", "", tr("AAC files (*.m4a *.mp4)"));
 
+    if(m_filePath.isEmpty())
+    {
+        return;
+    }
+
     qDebug () << m_space << m_filePath;
 
     m_fftest->open(m_filePath.toStdString().c_str());

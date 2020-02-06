@@ -1,4 +1,5 @@
 find_package(Qt5Widgets REQUIRED)
+find_package(Qt5Multimedia REQUIRED)
 
 set(SRC_FFMPEG_TEST
     ffmain.cpp
@@ -7,7 +8,7 @@ set(SRC_FFMPEG_TEST
     )
 
 add_executable(ffmpeg_test ${SRC_FFMPEG_TEST})
-target_link_libraries(ffmpeg_test Qt5::Widgets)
+target_link_libraries(ffmpeg_test Qt5::Widgets Qt5::Multimedia)
 
 ##ffmpeg
-target_link_libraries(ffmpeg_test avformat avcodec avutil)
+target_link_libraries(ffmpeg_test avformat avcodec avutil swresample)
