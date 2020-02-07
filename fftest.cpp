@@ -4,6 +4,7 @@
 #include <QAudioOutput>
 #include <QAudioFormat>
 #include <QAudioDeviceInfo>
+#include <QByteArray>
 #include <QDebug>
 
 extern "C" {
@@ -19,6 +20,7 @@ extern "C" {
 FFTest::FFTest(QObject *parent)
     : QObject(parent)
     , m_space("    ")
+    , m_ffTestOps(this)
     , m_audioDevice(nullptr)
     , pFormatContext(nullptr)
     , pCodec(nullptr)
@@ -72,7 +74,8 @@ void FFTest::init()
 
 void FFTest::open(const char *filePath)
 {
-    initAudio();
+    int audioFreq = 0;
+    int audioChannels = 0;
 
     clear();
 
@@ -171,6 +174,9 @@ void FFTest::open(const char *filePath)
             qDebug() << m_space << m_space << m_space
                      << "Audio Codec - sample rate: " << pLocalCodecParameters->sample_rate;
 
+            audioFreq = pLocalCodecParameters->sample_rate;
+            audioChannels = pLocalCodecParameters->channels;
+
             break;
 
         default:
@@ -268,12 +274,14 @@ void FFTest::open(const char *filePath)
 //                                            0, nullptr);
     //}
 
+    initAudio(audioFreq, audioChannels);
+
     while(av_read_frame(pFormatContext, pPacket) >= 0)
     {
 
         int packet_stream_index = pPacket->stream_index;
         if(packet_stream_index == audio_stream_index)
-//        if(packet_stream_index == video_stream_index)
+        //if(packet_stream_index == video_stream_index)
         {
             qDebug() << m_space << m_space
                      << "AVPacket::pts " << pPacket->pts;
@@ -435,7 +443,13 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 //    uint8_t *audio_buf = new uint8_t[64000];
 //    memcpy(audio_buf, pFrame->data[0], data_size);
 
-    writeToAudio((const char *)pFrame->data[0], sizeof(uint8_t) * data_size);
+    QByteArray *byteArray = new QByteArray();;
+    byteArray->setRawData((const char *)pFrame->data[0], data_size);
+    //writeToAudio((const char *)pFrame->data[0], (qint64)data_size);
+    //writeToAudio(byteArray->data(), byteArray->size());
+
+    double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
+    emit decodedFrame(byteArray, pTime);
 
     return response;
 }
@@ -448,10 +462,10 @@ std::string FFTest::avErr2str(int errnum)
     return std::string(errbuf);
 }
 
-void FFTest::initAudio()
+void FFTest::initAudio(int freq, int channels)
 {
-    int sampleRate = 44100;
-    int channelCount = 2;
+    int sampleRate = freq;//44100;
+    int channelCount = channels;//2;
     int sampleSize = 32;//16; //bits per sample
 
     QAudioDeviceInfo deviceInfo = QAudioDeviceInfo::defaultOutputDevice();
@@ -471,11 +485,64 @@ void FFTest::initAudio()
     }
 
     m_audioOutput.reset(new QAudioOutput(deviceInfo, format));
+    m_audioOutput->setBufferSize(128000);
     m_audioDevice = m_audioOutput->start();
+
 }
 
-void FFTest::writeToAudio(const char *buffer, int length)
+void FFTest::writeToAudio(const char *buffer, qint64 length)
 {
     m_audioDevice->write(buffer, length);
-    QThread::currentThread()->msleep(1000.0 * 1024.0 / 44100.0);
+    QThread::currentThread()->msleep(1000.0 * 0.5 * 1024.0 / 44100.0);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+FFTestOps::FFTestOps(FFTest *ffTest, QObject *parent)
+    : QObject(parent)
+    , m_ffTest(ffTest)
+    , m_lastpTime(0)
+{
+    this->moveToThread(&m_thread);
+    m_timer.moveToThread(&m_thread);
+    m_timer.setSingleShot(true);
+    connect(&m_timer, &QTimer::timeout, this, &FFTestOps::onTimer);
+    connect(m_ffTest, &FFTest::decodedFrame, this, &FFTestOps::onDecodedFrame);
+
+    m_thread.start();
+}
+
+void FFTestOps::onInitTimer()
+{
+
+}
+
+void FFTestOps::onTimer()
+{
+    AudioFrame af = m_playQueue.dequeue();
+    writeToAudio(af.buffer);
+}
+
+void FFTestOps::onDecodedFrame(QByteArray *buffer, double ptime)
+{
+    if(ptime == 0)
+    {
+        writeToAudio(buffer);
+        return;
+    }
+    AudioFrame af;
+    af.buffer = buffer;
+    af.pTime = ptime;
+    m_playQueue.enqueue(af);
+    //m_timer.start(1000.0 * (ptime - m_lastpTime));
+    //QTimer::singleShot(1000.0 * (ptime - m_lastpTime), this, &FFTestOps::onTimer);
+    //m_thread.msleep(1000.0 * (ptime - m_lastpTime));
+    //onTimer();
+    m_lastpTime = ptime;
+}
+
+void FFTestOps::writeToAudio(QByteArray *buffer)
+{
+    m_ffTest->m_audioDevice->write(buffer->data(), buffer->length());
+    //delete buffer;
 }
