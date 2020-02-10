@@ -16,6 +16,7 @@ extern "C"
     struct AVCodecContext;
     struct AVPacket;
     struct AVFrame;
+    struct AVStream;
 }
 
 class QIODevice;
@@ -34,6 +35,7 @@ class FFTestOps : public QObject
 
 public:
     FFTestOps(FFTest *ffTest, QObject *parent = nullptr);
+    ~FFTestOps();
 
 signals:
     void initTimer();
@@ -83,6 +85,8 @@ private:
     void initAudio(int freq, int channels);
     void writeToAudio(const char *buffer, qint64 length);
 
+    int initEncoder();
+
 private:
     const char *m_space;
 
@@ -97,6 +101,14 @@ private:
     AVCodec *pCodec;
     AVCodecParameters *pCodecParameters;
     AVCodecContext *pCodecContext;
+
+    //encode information
+    const char *m_outputFileName;
+    AVFormatContext *pEncoderFormatContext;
+    AVStream *pEncoderStream;
+    AVCodec *pEncoderCodec;
+    AVCodecContext *pEncoderCodecContext;
+
 
 };
 

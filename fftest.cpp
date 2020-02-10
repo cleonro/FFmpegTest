@@ -26,7 +26,11 @@ FFTest::FFTest(QObject *parent)
     , pCodec(nullptr)
     , pCodecParameters(nullptr)
     , pCodecContext(nullptr)
-
+    , m_outputFileName("FFTest.mp3")
+    , pEncoderFormatContext(nullptr)
+    , pEncoderStream(nullptr)
+    , pEncoderCodec(nullptr)
+    , pEncoderCodecContext(nullptr)
 {
 
 }
@@ -446,10 +450,12 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
     QByteArray *byteArray = new QByteArray();;
     byteArray->setRawData((const char *)pFrame->data[0], data_size);
     //writeToAudio((const char *)pFrame->data[0], (qint64)data_size);
-    //writeToAudio(byteArray->data(), byteArray->size());
 
-    double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
-    emit decodedFrame(byteArray, pTime);
+    //int q_data_size = byteArray->size();
+    //writeToAudio(byteArray->data(), q_data_size);
+
+//    double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
+//    emit decodedFrame(byteArray, pTime);
 
     return response;
 }
@@ -485,15 +491,93 @@ void FFTest::initAudio(int freq, int channels)
     }
 
     m_audioOutput.reset(new QAudioOutput(deviceInfo, format));
-    m_audioOutput->setBufferSize(128000);
+    m_audioOutput->setBufferSize(8192);
     m_audioDevice = m_audioOutput->start();
-
+    int audioBufferSize = m_audioOutput->bufferSize();
+    int audioPeriodSize = m_audioOutput->periodSize();
+    qDebug() << m_space << Q_FUNC_INFO << " audio buffer size: " << audioBufferSize
+             << "; period size: " << audioPeriodSize;
 }
 
 void FFTest::writeToAudio(const char *buffer, qint64 length)
 {
-    m_audioDevice->write(buffer, length);
+    int bufferSize = m_audioOutput->bufferSize();
+    int bytesFree = m_audioOutput->bytesFree();
+    int perSize = m_audioOutput->periodSize();
+    int bytesWritten = m_audioDevice->write(buffer, length);
+
+//    m_audioDevice->write(buffer, perSize);
+//    m_audioDevice->write(buffer + perSize, length - perSize);
+
     QThread::currentThread()->msleep(1000.0 * 0.5 * 1024.0 / 44100.0);
+}
+
+int FFTest::initEncoder()
+{
+    qDebug() << m_space << Q_FUNC_INFO;
+
+    int result = 0;
+
+    result = avformat_alloc_output_context2(&pEncoderFormatContext, nullptr, nullptr, m_outputFileName);
+    if(result < 0 || pEncoderFormatContext == nullptr)
+    {
+        qDebug() << m_space << m_space
+                 << "could not allocate memory for output format";
+        return result;
+    }
+    qDebug() << m_space << m_space
+             << "Allocated memory for output format";
+
+    pEncoderStream = avformat_new_stream(pEncoderFormatContext, nullptr);
+    if(pEncoderStream == nullptr)
+    {
+        qDebug() << m_space << m_space << "Encoder stream not created!";
+        return -1;
+    }
+    qDebug() << m_space << m_space << "Encoder stream created.";
+
+    pEncoderCodec = avcodec_find_encoder_by_name("mp3");
+    if(pEncoderCodec == nullptr)
+    {
+        qDebug() << m_space << m_space << "Could not find the proper codec!";
+        return -1;
+    }
+    qDebug() << m_space << m_space << "Found the proper codec.";
+
+    pEncoderCodecContext = avcodec_alloc_context3(pEncoderCodec);
+    if(pEncoderCodecContext == nullptr)
+    {
+        qDebug() << m_space << m_space << "Could not allocated memory for codec context!";
+        return -1;
+    }
+    qDebug() << m_space << m_space << "Allocated memory for codec context.";
+
+    int OUTPUT_CHANNELS = 2;
+    int OUTPUT_BIT_RATE = 196000;
+    int sample_rate = 44100;
+
+    pEncoderCodecContext->channels = OUTPUT_CHANNELS;
+    pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);
+    pEncoderCodecContext->sample_rate = sample_rate;
+    pEncoderCodecContext->sample_fmt = AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
+    pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
+    pEncoderCodecContext->time_base = AVRational{1, sample_rate};
+
+    pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+
+    pEncoderStream->time_base = pEncoderCodecContext->time_base;
+
+    result = avcodec_open2(pEncoderCodecContext, pEncoderCodec, nullptr);
+    if(result < 0)
+    {
+        qDebug() << m_space << m_space
+                 << "Could not open the codec!";
+        return result;
+    }
+
+    avcodec_parameters_from_context(pEncoderStream->codecpar, pEncoderCodecContext);
+
+    return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -510,6 +594,14 @@ FFTestOps::FFTestOps(FFTest *ffTest, QObject *parent)
     connect(m_ffTest, &FFTest::decodedFrame, this, &FFTestOps::onDecodedFrame);
 
     m_thread.start();
+}
+
+FFTestOps::~FFTestOps()
+{
+    m_timer.stop();
+
+    m_thread.quit();
+    m_thread.wait();
 }
 
 void FFTestOps::onInitTimer()
