@@ -96,6 +96,9 @@ private:
     QScopedPointer<QAudioOutput> m_audioOutput;
     QIODevice *m_audioDevice;
 
+    int m_audio_stream_index = -1;
+    int m_video_stream_index = -1;
+
     //ffmpeg specifics;
     AVFormatContext *pFormatContext;
     AVCodec *pCodec;

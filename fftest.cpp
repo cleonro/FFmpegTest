@@ -26,7 +26,8 @@ FFTest::FFTest(QObject *parent)
     , pCodec(nullptr)
     , pCodecParameters(nullptr)
     , pCodecContext(nullptr)
-    , m_outputFileName("FFTest.mp3")
+    //, m_outputFileName("FFTest.mp3")
+    , m_outputFileName("FFTest.ac3")
     , pEncoderFormatContext(nullptr)
     , pEncoderStream(nullptr)
     , pEncoderCodec(nullptr)
@@ -108,8 +109,8 @@ void FFTest::open(const char *filePath)
     qDebug() << m_space << m_space << "Number of streams "
              << pFormatContext->nb_streams;
 
-    int audio_stream_index = -1;
-    int video_stream_index = -1;
+    m_audio_stream_index = -1;
+    m_video_stream_index = -1;
 
     for(int i = 0; i < pFormatContext->nb_streams; ++i)
     {
@@ -166,9 +167,9 @@ void FFTest::open(const char *filePath)
         case AVMEDIA_TYPE_AUDIO:
             qDebug() << m_space << m_space << m_space
                      << "Codec type: AVMEDIA_TYPE_AUDIO";
-            if(audio_stream_index == -1)
+            if(m_audio_stream_index == -1)
             {
-                audio_stream_index = i;
+                m_audio_stream_index = i;
                 pCodec = pLocalCodec;
                 pCodecParameters = pLocalCodecParameters;
             }
@@ -285,7 +286,7 @@ void FFTest::open(const char *filePath)
     {
 
         int packet_stream_index = pPacket->stream_index;
-        if(packet_stream_index == audio_stream_index)
+        if(packet_stream_index == m_audio_stream_index)
         //if(packet_stream_index == video_stream_index)
         {
             qDebug() << m_space << m_space
@@ -357,6 +358,13 @@ void FFTest::open(const char *filePath)
 
     av_packet_free(&pPacket);
     av_frame_free(&pFrame);
+
+    //encoder
+    {
+        avformat_close_input(&pEncoderFormatContext);
+        avformat_free_context(pEncoderFormatContext);
+        avcodec_free_context(&pEncoderCodecContext);
+    }
 }
 
 int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame)
@@ -454,13 +462,44 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
     //encode
     {
-        AVFrame *inputFrame = av_frame_alloc();
-        inputFrame->format = pEncoderCodecContext->sample_fmt;
-        inputFrame->channels = pEncoderCodecContext->channels;
-        inputFrame->channel_layout = pEncoderCodecContext->channel_layout;
-        inputFrame->sample_rate = pEncoderCodecContext->sample_rate;
-        inputFrame->nb_samples = 1024;
-        av_frame_get_buffer(inputFrame, 0);
+//        AVFrame *inputFrame = av_frame_alloc();
+//        inputFrame->format = pEncoderCodecContext->sample_fmt;
+//        inputFrame->channels = pEncoderCodecContext->channels;
+//        inputFrame->channel_layout = pEncoderCodecContext->channel_layout;
+//        inputFrame->sample_rate = pEncoderCodecContext->sample_rate;
+//        inputFrame->nb_samples = 1024;
+//        av_frame_get_buffer(inputFrame, 0);
+        AVPacket *outputPacket = av_packet_alloc();
+        response = avcodec_send_frame(pEncoderCodecContext, pFrame);
+        while(response >= 0)
+        {
+            response = avcodec_receive_packet(pEncoderCodecContext, outputPacket);
+            if(response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+            {
+                break;
+            }
+            else if(response < 0)
+            {
+                qDebug() << m_space << m_space
+                         << "Error while receiving packet from encoder: "
+                         << avErr2str(response).c_str();
+                return -1;
+            }
+
+            outputPacket->stream_index = m_audio_stream_index;
+            av_packet_rescale_ts(outputPacket, pEncoderCodecContext->time_base, pCodecContext->time_base);
+            response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
+            if(response < 0)
+            {
+                qDebug() << m_space << m_space
+                         << "Error " << response << " while receiving packet from decoder: "
+                         << avErr2str(response).c_str();
+                return -1;
+            }
+        }
+        av_packet_unref(outputPacket);
+        av_packet_free(&outputPacket);
+
     }
 
     //int q_data_size = byteArray->size();
@@ -548,7 +587,11 @@ int FFTest::initEncoder()
     }
     qDebug() << m_space << m_space << "Encoder stream created.";
 
-    pEncoderCodec = avcodec_find_encoder_by_name("mp3");
+    pEncoderCodec = avcodec_find_encoder_by_name("AC3");
+    if(pEncoderCodec == nullptr)
+    {
+        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
+    }
     if(pEncoderCodec == nullptr)
     {
         qDebug() << m_space << m_space << "Could not find the proper codec!";
@@ -571,9 +614,11 @@ int FFTest::initEncoder()
     pEncoderCodecContext->channels = OUTPUT_CHANNELS;
     pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);
     pEncoderCodecContext->sample_rate = sample_rate;
-    pEncoderCodecContext->sample_fmt = AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
+    pEncoderCodecContext->sample_fmt = /*AV_SAMPLE_FMT_FLT;//*/pEncoderCodec->sample_fmts[0];
     pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
+    //? - is it correct?
+    //pEncoderCodecContext->frame_size = 1024;
 
     pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 
@@ -583,11 +628,51 @@ int FFTest::initEncoder()
     if(result < 0)
     {
         qDebug() << m_space << m_space
-                 << "Could not open the codec!";
+                 << "Could not open the codec: " << avErr2str(result).c_str();
         return result;
     }
 
     avcodec_parameters_from_context(pEncoderStream->codecpar, pEncoderCodecContext);
+
+    //file
+    if (pEncoderFormatContext->oformat->flags & AVFMT_GLOBALHEADER)
+    {
+       pEncoderFormatContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+
+    result = avio_open(&pEncoderFormatContext->pb, m_outputFileName, AVIO_FLAG_WRITE);
+    if(result < 0)
+    {
+        qDebug() << m_space << m_space
+                 << "Could not open the output file: " << avErr2str(result).c_str();
+        return -1;
+    }
+
+    AVDictionary* muxer_opts = nullptr;
+
+//    if (sp.muxer_opt_key && sp.muxer_opt_value)
+//    {
+//        av_dict_set(&muxer_opts, sp.muxer_opt_key, sp.muxer_opt_value, 0);
+//    }
+
+//    result = av_dict_copy(&muxer_opts, pEncoderFormatContext->metadata, 0);
+//    if(result < 0)
+//    {
+//        qDebug() << m_space << m_space
+//                 << "Error when using AVDictionary!";
+//    }
+
+
+    //result = avformat_write_header(pEncoderFormatContext, &muxer_opts);
+    result = avformat_write_header(pEncoderFormatContext, &pEncoderFormatContext->metadata);
+    if(result < 0)
+    {
+        qDebug() << m_space << m_space
+                 << "An error occurred when opening output file";
+        return -1;
+    }
+    qDebug() << m_space << m_space
+             << "Opened output file.";
 
     return result;
 }
