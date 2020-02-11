@@ -15,6 +15,9 @@
 ///
 /// 3. (not investigated - yet)
 /// https://www.whoishostingthis.com/compare/ffmpeg/resources/
+///
+/// 4. Google - search "construct avframe from buffer"
+///     https://ffmpeg.zeranoe.com/forum/viewtopic.php?t=6036
 
 
 #include <QApplication>

@@ -279,6 +279,7 @@ void FFTest::open(const char *filePath)
     //}
 
     initAudio(audioFreq, audioChannels);
+    initEncoder();
 
     while(av_read_frame(pFormatContext, pPacket) >= 0)
     {
@@ -450,6 +451,17 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
     QByteArray *byteArray = new QByteArray();;
     byteArray->setRawData((const char *)pFrame->data[0], data_size);
     //writeToAudio((const char *)pFrame->data[0], (qint64)data_size);
+
+    //encode
+    {
+        AVFrame *inputFrame = av_frame_alloc();
+        inputFrame->format = pEncoderCodecContext->sample_fmt;
+        inputFrame->channels = pEncoderCodecContext->channels;
+        inputFrame->channel_layout = pEncoderCodecContext->channel_layout;
+        inputFrame->sample_rate = pEncoderCodecContext->sample_rate;
+        inputFrame->nb_samples = 1024;
+        av_frame_get_buffer(inputFrame, 1);
+    }
 
     //int q_data_size = byteArray->size();
     //writeToAudio(byteArray->data(), q_data_size);
