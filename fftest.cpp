@@ -460,7 +460,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
         inputFrame->channel_layout = pEncoderCodecContext->channel_layout;
         inputFrame->sample_rate = pEncoderCodecContext->sample_rate;
         inputFrame->nb_samples = 1024;
-        av_frame_get_buffer(inputFrame, 1);
+        av_frame_get_buffer(inputFrame, 0);
     }
 
     //int q_data_size = byteArray->size();
