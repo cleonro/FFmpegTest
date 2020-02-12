@@ -17,6 +17,10 @@ extern "C"
     struct AVPacket;
     struct AVFrame;
     struct AVStream;
+
+    struct SwrContext;
+
+    struct AVAudioFifo;
 }
 
 class QIODevice;
@@ -86,6 +90,8 @@ private:
     void writeToAudio(const char *buffer, qint64 length);
 
     int initEncoder();
+    int initResampler();
+    int initFifo();
 
 private:
     const char *m_space;
@@ -112,6 +118,8 @@ private:
     AVCodec *pEncoderCodec;
     AVCodecContext *pEncoderCodecContext;
 
+    SwrContext *pSwrContext;
+    AVAudioFifo *pAudioFifo;
 
 };
 

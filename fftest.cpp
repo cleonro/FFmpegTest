@@ -6,6 +6,7 @@
 #include <QAudioDeviceInfo>
 #include <QByteArray>
 #include <QDebug>
+#include <QtGlobal>
 
 extern "C" {
     #include <libavcodec/avcodec.h>
@@ -13,6 +14,8 @@ extern "C" {
     //#include <libswscale/swscale.h>
 
     #include <libswresample/swresample.h>
+
+    #include <libavutil/audio_fifo.h>
 }
 
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
@@ -27,11 +30,14 @@ FFTest::FFTest(QObject *parent)
     , pCodecParameters(nullptr)
     , pCodecContext(nullptr)
     //, m_outputFileName("FFTest.mp3")
-    , m_outputFileName("FFTest.ac3")
+    //, m_outputFileName("FFTest.ac3")
+    , m_outputFileName("FFTest.m4a")
     , pEncoderFormatContext(nullptr)
     , pEncoderStream(nullptr)
     , pEncoderCodec(nullptr)
     , pEncoderCodecContext(nullptr)
+    , pSwrContext(nullptr)
+    , pAudioFifo(nullptr)
 {
 
 }
@@ -281,6 +287,8 @@ void FFTest::open(const char *filePath)
 
     initAudio(audioFreq, audioChannels);
     initEncoder();
+    initResampler();
+    initFifo();
 
     while(av_read_frame(pFormatContext, pPacket) >= 0)
     {
@@ -361,6 +369,9 @@ void FFTest::open(const char *filePath)
 
     //encoder
     {
+        av_write_trailer(pEncoderFormatContext);
+        avformat_close_input(&pEncoderFormatContext);
+
         avformat_close_input(&pEncoderFormatContext);
         avformat_free_context(pEncoderFormatContext);
         avcodec_free_context(&pEncoderCodecContext);
@@ -587,10 +598,15 @@ int FFTest::initEncoder()
     }
     qDebug() << m_space << m_space << "Encoder stream created.";
 
-    pEncoderCodec = avcodec_find_encoder_by_name("AC3");
+//    pEncoderCodec = avcodec_find_encoder_by_name("AC3");
+//    if(pEncoderCodec == nullptr)
+//    {
+//        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
+//    }
+    pEncoderCodec = avcodec_find_encoder_by_name("aac");
     if(pEncoderCodec == nullptr)
     {
-        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
+        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
     }
     if(pEncoderCodec == nullptr)
     {
@@ -664,7 +680,8 @@ int FFTest::initEncoder()
 
 
     //result = avformat_write_header(pEncoderFormatContext, &muxer_opts);
-    result = avformat_write_header(pEncoderFormatContext, &pEncoderFormatContext->metadata);
+    //result = avformat_write_header(pEncoderFormatContext, &pEncoderFormatContext->metadata);
+    result = avformat_write_header(pEncoderFormatContext, nullptr);
     if(result < 0)
     {
         qDebug() << m_space << m_space
@@ -673,6 +690,63 @@ int FFTest::initEncoder()
     }
     qDebug() << m_space << m_space
              << "Opened output file.";
+
+    return result;
+}
+
+int FFTest::initResampler()
+{
+    qDebug() << m_space << Q_FUNC_INFO;
+
+    int result = 0;
+
+    pSwrContext = swr_alloc_set_opts(nullptr,
+                                     av_get_default_channel_layout(pEncoderCodecContext->channels),
+                                     pEncoderCodecContext->sample_fmt,
+                                     pEncoderCodecContext->sample_rate,
+
+                                     av_get_default_channel_layout(pCodecContext->channels),
+                                     pCodecContext->sample_fmt,
+                                     pCodecContext->sample_rate,
+                                     0,
+                                     nullptr);
+    if(pSwrContext == nullptr)
+    {
+        qDebug() << m_space << m_space
+                 << "Could not allocate resample context!";
+        return AVERROR(ENOMEM);
+    }
+    qDebug() << m_space << m_space
+             << "Allocated resample context!";
+    Q_ASSERT(pEncoderCodecContext->sample_rate == pCodecContext->sample_rate);
+
+    result = swr_init(pSwrContext);
+    if(result < 0)
+    {
+        qDebug() << m_space << m_space
+                 << "Could not open resample context!";
+        swr_free(&pSwrContext);
+        return result;
+    }
+    qDebug() << m_space << m_space
+             << "Opened resample context!";
+
+    return result;
+}
+
+int FFTest::initFifo()
+{
+    qDebug() << m_space << Q_FUNC_INFO;
+
+    int result = 0;
+
+    pAudioFifo = av_audio_fifo_alloc(pEncoderCodecContext->sample_fmt, pEncoderCodecContext->channels, 1);
+    if(pAudioFifo == nullptr)
+    {
+        qDebug() << m_space << m_space
+                 << "Could not allocate FIFO!";
+        return AVERROR(ENOMEM);
+    }
 
     return result;
 }
