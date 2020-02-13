@@ -603,10 +603,13 @@ int FFTest::initEncoder()
 //    {
 //        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
 //    }
-    pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    ////pEncoderCodec = avcodec_find_encoder_by_name("aac");
     if(pEncoderCodec == nullptr)
     {
-        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+        //pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+        //pEncoderCodec = avcodec_find_encoder(pCodecContext->codec_id);
+        //ONLY for test!
+        pEncoderCodec = pCodec;
     }
     if(pEncoderCodec == nullptr)
     {
@@ -633,14 +636,15 @@ int FFTest::initEncoder()
     pEncoderCodecContext->sample_fmt = /*AV_SAMPLE_FMT_FLT;//*/pEncoderCodec->sample_fmts[0];
     pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
-    //? - is it correct?
-    //pEncoderCodecContext->frame_size = 1024;
 
     pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 
     pEncoderStream->time_base = pEncoderCodecContext->time_base;
 
     result = avcodec_open2(pEncoderCodecContext, pEncoderCodec, nullptr);
+    //? - is it correct? - maybe works for AAC [NO, it doesn't!]
+    //pEncoderCodecContext->frame_size = 2048;//1024;
+
     if(result < 0)
     {
         qDebug() << m_space << m_space
