@@ -18,6 +18,10 @@
 ///
 /// 4. Google - search "construct avframe from buffer"
 ///     https://ffmpeg.zeranoe.com/forum/viewtopic.php?t=6036
+///
+/// 5. Google - search "AVFrame extended_data"
+///     https://www.ffmpeg.org/doxygen/2.3/decoding_encoding_8c-example.html#_a15
+///
 
 
 #include <QApplication>

@@ -16,6 +16,8 @@ extern "C" {
     #include <libswresample/swresample.h>
 
     #include <libavutil/audio_fifo.h>
+
+    #include <libavutil/opt.h>
 }
 
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
@@ -603,13 +605,14 @@ int FFTest::initEncoder()
 //    {
 //        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
 //    }
-    ////pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    //pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
     if(pEncoderCodec == nullptr)
     {
         //pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
         //pEncoderCodec = avcodec_find_encoder(pCodecContext->codec_id);
         //ONLY for test!
-        pEncoderCodec = pCodec;
+        ////pEncoderCodec = pCodec;
     }
     if(pEncoderCodec == nullptr)
     {
@@ -633,13 +636,28 @@ int FFTest::initEncoder()
     pEncoderCodecContext->channels = OUTPUT_CHANNELS;
     pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);
     pEncoderCodecContext->sample_rate = sample_rate;
-    pEncoderCodecContext->sample_fmt = /*AV_SAMPLE_FMT_FLT;//*/pEncoderCodec->sample_fmts[0];
+    pEncoderCodecContext->sample_fmt = pCodec->sample_fmts[0];//AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
     pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
+
+    //test
+    pEncoderCodecContext->profile = FF_PROFILE_AAC_HE_V2;
+    //
 
     pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 
     pEncoderStream->time_base = pEncoderCodecContext->time_base;
+
+    //test - NOT working
+//    result = av_opt_set(pEncoderCodecContext->priv_data, "profile", "aac_he", 0);
+//    if(result < 0)
+//    {
+//        qDebug() << m_space << m_space
+//                 << "Profile aac_he not set: " << avErr2str(result).c_str();
+//    }
+//    qDebug() << m_space << m_space
+//             << "Profile aac_he set!";
+    //
 
     result = avcodec_open2(pEncoderCodecContext, pEncoderCodec, nullptr);
     //? - is it correct? - maybe works for AAC [NO, it doesn't!]
