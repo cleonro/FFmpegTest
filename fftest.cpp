@@ -40,13 +40,27 @@ FFTest::FFTest(QObject *parent)
     , pEncoderCodecContext(nullptr)
     , pSwrContext(nullptr)
     , pAudioFifo(nullptr)
+    , pConvertedSamples(nullptr)
+    , m_convertedSamplesInitialized(false)
 {
+    this->moveToThread(&m_thread);
+    connect(this, &FFTest::openSignal, this, &FFTest::open);
 
+    m_thread.start();
 }
 
 FFTest::~FFTest()
 {
+    m_thread.quit();
+    m_thread.wait();
+
     clear();
+}
+
+void FFTest::openRequest(QString filePath)
+{
+    qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread();
+    emit openSignal(filePath);
 }
 
 void FFTest::clear()
@@ -61,6 +75,13 @@ void FFTest::clear()
     avformat_free_context(pFormatContext);
 
     avcodec_free_context(&pCodecContext);
+
+    if(m_convertedSamplesInitialized)
+    {
+        av_freep(pConvertedSamples);
+        delete [] pConvertedSamples;
+        m_convertedSamplesInitialized = false;
+    }
 }
 
 void FFTest::init()
@@ -85,15 +106,19 @@ void FFTest::init()
     }
 }
 
-void FFTest::open(const char *filePath)
+void FFTest::open(QString filePath)
 {
     int audioFreq = 0;
     int audioChannels = 0;
 
     clear();
 
-    qDebug() << Q_FUNC_INFO;
-    int status = avformat_open_input(&pFormatContext, filePath, nullptr, nullptr);
+    qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread()
+             << "; working thread: " << &m_thread;
+    int status = avformat_open_input(&pFormatContext,
+                                     //"http://radiorivendell.ddns.net:8000/128kbit.mp3",
+                                     filePath.toStdString().c_str(),
+                                     nullptr, nullptr);
     if(status != 0)
     {
         qDebug() << m_space << "ERROR could not open the file";
@@ -444,7 +469,17 @@ int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFr
 
 int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 {
+    const bool sendToAudio = false;
+    const bool encode = false;
+
     qDebug() << m_space << Q_FUNC_INFO;
+
+    if(!m_convertedSamplesInitialized)
+    {
+        pConvertedSamples = new uint8_t*[pEncoderCodecContext->channels];
+        av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
+                         pFrame->nb_samples, pEncoderCodecContext->sample_fmt, 0);
+    }
 
     int response = 0;
 
@@ -470,11 +505,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
                                pFrame->nb_samples,
                                pCodecContext->sample_fmt,
                                1);
-//    uint8_t *audio_buf = new uint8_t[64000];
-//    memcpy(audio_buf, pFrame->data[0], data_size);
 
-    QByteArray *byteArray = new QByteArray();;
-    byteArray->setRawData((const char *)pFrame->data[0], data_size);
     qDebug() << m_space << m_space
              << "Frame " << pCodecContext->frame_number << " [continuation - data size]: "
              << "frame.nb_sample " << pFrame->nb_samples << "; "
@@ -484,10 +515,27 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
              << " Codec frame size " << pCodecContext->frame_size << "; "
              << "Bytes per sample " << av_get_bytes_per_sample(pCodecContext->sample_fmt) << "; "
              << " Buffer size " << data_size;
-    //writeToAudio((const char *)pFrame->data[0], (qint64)data_size);
 
-    //encode
-    if(false && true)
+    if(sendToAudio)
+    {
+        QByteArray *byteArray = new QByteArray();;
+        //byteArray->setRawData((const char *)pFrame->data[0], data_size);
+        byteArray->setRawData((const char *)pFrame->extended_data[0], data_size);
+        byteArray->setRawData((const char *)pFrame->extended_data[0], data_size / 2);
+        byteArray->reserve(data_size);
+        for(int i = 0; i < data_size / 2; ++i)
+        {
+            byteArray->push_back(pFrame->data[0][i] - 127);
+            byteArray->push_back(pFrame->data[1][i] - 127);
+        }
+        int q_data_size = byteArray->size();
+        writeToAudio(byteArray->data(), q_data_size);
+        //double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
+        //emit decodedFrame(byteArray, pTime);
+
+    }
+
+    if(encode)
     {
 //        AVFrame *inputFrame = av_frame_alloc();
 //        inputFrame->format = pEncoderCodecContext->sample_fmt;
@@ -529,12 +577,6 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
     }
 
-    //int q_data_size = byteArray->size();
-    //writeToAudio(byteArray->data(), q_data_size);
-
-//    double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
-//    emit decodedFrame(byteArray, pTime);
-
     return response;
 }
 
@@ -561,6 +603,7 @@ void FFTest::initAudio(int freq, int channels)
     format.setCodec("audio/pcm");
     format.setByteOrder(QAudioFormat::LittleEndian);
     format.setSampleType(QAudioFormat::Float);
+    //format.setSampleType(QAudioFormat::UnSignedInt);
 
     if(!deviceInfo.isFormatSupported(format))
     {
@@ -580,14 +623,26 @@ void FFTest::initAudio(int freq, int channels)
 void FFTest::writeToAudio(const char *buffer, qint64 length)
 {
     int bufferSize = m_audioOutput->bufferSize();
-    int bytesFree = m_audioOutput->bytesFree();
+    int bytesFree = m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
     int perSize = m_audioOutput->periodSize();
+    if(bytesFree == 0)
+    {
+        int bytesWritten = m_audioDevice->write(buffer, length);
+        qDebug() << "audio data written " << bytesWritten;
+    }
+    else while(bytesFree > 0)
+    {
+        QThread::currentThread()->msleep(10);
+        bytesFree = m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
+        qDebug() << "audio data not written__ " << bytesFree;
+    }
     int bytesWritten = m_audioDevice->write(buffer, length);
+    qDebug() << "audio data written " << bytesWritten;
 
 //    m_audioDevice->write(buffer, perSize);
 //    m_audioDevice->write(buffer + perSize, length - perSize);
 
-    QThread::currentThread()->msleep(1000.0 * 0.5 * 1024.0 / 44100.0);
+    //QThread::currentThread()->msleep(1000.0 * 0.5 * 1024.0 / 44100.0);
 }
 
 int FFTest::initEncoder()
@@ -644,8 +699,8 @@ int FFTest::initEncoder()
     qDebug() << m_space << m_space << "Allocated memory for codec context.";
 
     int OUTPUT_CHANNELS = 2;
-    int OUTPUT_BIT_RATE = 196000;
-    int sample_rate = 44100;
+    int OUTPUT_BIT_RATE = 96000;
+    int sample_rate = pCodecContext->sample_rate;//44100;
 
     pEncoderCodecContext->channels = OUTPUT_CHANNELS;
     pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);

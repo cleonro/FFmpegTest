@@ -2,6 +2,7 @@
 #define FFMAINWINDOW_H
 
 #include <QMainWindow>
+#include <QSharedPointer>
 
 namespace Ui {
 class FFMainWindow;
@@ -32,7 +33,7 @@ private:
     const char *m_space;
     Ui::FFMainWindow *ui;
     QString m_filePath;
-    FFTest *m_fftest;
+    QSharedPointer<FFTest> m_fftest;
 };
 
 #endif // FFMAINWINDOW_H

@@ -73,10 +73,14 @@ public:
     ~FFTest();
 
     void init();
-    void open(const char *filePath);
+    void openRequest(QString filePath);
 
 signals:
     void decodedFrame(QByteArray *buffer, double ptime);
+    void openSignal(QString filePath);
+
+private slots:
+    void open(QString filePath);
 
 private:
     void clear();
@@ -94,6 +98,8 @@ private:
     int initFifo();
 
 private:
+    QThread m_thread;
+
     const char *m_space;
 
     FFTestOps m_ffTestOps;
@@ -120,6 +126,8 @@ private:
 
     SwrContext *pSwrContext;
     AVAudioFifo *pAudioFifo;
+    uint8_t **pConvertedSamples;
+    bool m_convertedSamplesInitialized;
 
 };
 

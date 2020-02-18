@@ -5,6 +5,7 @@
 #include <QQueue>
 #include <QFileDialog>
 #include <QDebug>
+#include <iostream>
 
 static QPlainTextEdit *textOut = nullptr;
 
@@ -26,6 +27,7 @@ void messageOutput(QtMsgType type, const QMessageLogContext &context, const QStr
         else
         {
             textOut->appendPlainText(ms);
+            //std::cout << ms.toStdString() << std::endl;
         }
     }
         break;
@@ -58,7 +60,7 @@ FFMainWindow::FFMainWindow(QWidget *parent) :
     textOut = ui->output;
     emptyMsgBuffer();
 
-    m_fftest = new FFTest(this);
+    m_fftest.reset(new FFTest());
 }
 
 FFMainWindow::~FFMainWindow()
@@ -78,7 +80,7 @@ void FFMainWindow::on_action_Init_triggered()
 
 void FFMainWindow::on_action_Open_triggered()
 {
-    qDebug() << Q_FUNC_INFO;
+    qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread();
     m_filePath = QFileDialog::getOpenFileName(this, "Open AAC file", "", tr("AAC files (*.m4a *.mp4)"));
 
     if(m_filePath.isEmpty())
@@ -88,5 +90,5 @@ void FFMainWindow::on_action_Open_triggered()
 
     qDebug () << m_space << m_filePath;
 
-    m_fftest->open(m_filePath.toStdString().c_str());
+    m_fftest->openRequest(m_filePath);
 }
