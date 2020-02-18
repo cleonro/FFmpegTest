@@ -22,6 +22,9 @@
 /// 5. Google - search "AVFrame extended_data"
 ///     https://www.ffmpeg.org/doxygen/2.3/decoding_encoding_8c-example.html#_a15
 ///
+/// 6. Google - search "libavcodec get audio sample value" [third result]
+///     https://steemit.com/programming/@targodan/decoding-audio-files-with-ffmpeg
+///     https://gist.github.com/targodan/8cef8f2b682a30055aa7937060cd94b7
 
 
 #include <QApplication>

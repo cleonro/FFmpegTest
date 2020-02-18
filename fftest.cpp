@@ -372,7 +372,11 @@ void FFTest::open(const char *filePath)
     //encoder
     {
         av_write_trailer(pEncoderFormatContext);
-        avformat_close_input(&pEncoderFormatContext);
+        //?
+        avio_closep(&pEncoderFormatContext->pb);
+        //
+        //?
+        //avformat_close_input(&pEncoderFormatContext);
 
         avformat_close_input(&pEncoderFormatContext);
         avformat_free_context(pEncoderFormatContext);
@@ -471,9 +475,19 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
     QByteArray *byteArray = new QByteArray();;
     byteArray->setRawData((const char *)pFrame->data[0], data_size);
+    qDebug() << m_space << m_space
+             << "Frame " << pCodecContext->frame_number << " [continuation - data size]: "
+             << "frame.nb_sample " << pFrame->nb_samples << "; "
+             << " Format " << av_get_sample_fmt_name(pCodecContext->sample_fmt) << "; "
+             << " Format is planar " << av_sample_fmt_is_planar(pCodecContext->sample_fmt) << "; "
+             << " Channels " << pCodecContext->channels << "; "
+             << " Codec frame size " << pCodecContext->frame_size << "; "
+             << "Bytes per sample " << av_get_bytes_per_sample(pCodecContext->sample_fmt) << "; "
+             << " Buffer size " << data_size;
     //writeToAudio((const char *)pFrame->data[0], (qint64)data_size);
 
     //encode
+    if(false && true)
     {
 //        AVFrame *inputFrame = av_frame_alloc();
 //        inputFrame->format = pEncoderCodecContext->sample_fmt;
@@ -605,8 +619,8 @@ int FFTest::initEncoder()
 //    {
 //        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
 //    }
-    pEncoderCodec = avcodec_find_encoder_by_name("aac");
-    //pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
+    //pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
     if(pEncoderCodec == nullptr)
     {
         //pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
@@ -636,7 +650,7 @@ int FFTest::initEncoder()
     pEncoderCodecContext->channels = OUTPUT_CHANNELS;
     pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);
     pEncoderCodecContext->sample_rate = sample_rate;
-    pEncoderCodecContext->sample_fmt = pCodec->sample_fmts[0];//AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
+    pEncoderCodecContext->sample_fmt = pEncoderCodec->sample_fmts[0];//pCodec->sample_fmts[0];//AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
     pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
 
