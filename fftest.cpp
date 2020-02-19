@@ -8,6 +8,8 @@
 #include <QDebug>
 #include <QtGlobal>
 
+#include <iostream>
+
 extern "C" {
     #include <libavcodec/avcodec.h>
     #include <libavformat/avformat.h>
@@ -34,6 +36,8 @@ FFTest::FFTest(QObject *parent)
     //, m_outputFileName("FFTest.mp3")
     //, m_outputFileName("FFTest.ac3")
     , m_outputFileName("FFTest.m4a")
+    //, m_outputFileName("FFTest.aac")
+    //, m_outputFileName("FFTest")
     , pEncoderFormatContext(nullptr)
     , pEncoderStream(nullptr)
     , pEncoderCodec(nullptr)
@@ -42,6 +46,7 @@ FFTest::FFTest(QObject *parent)
     , pAudioFifo(nullptr)
     , pConvertedSamples(nullptr)
     , m_convertedSamplesInitialized(false)
+    , m_encodePTS(0)
 {
     this->moveToThread(&m_thread);
     connect(this, &FFTest::openSignal, this, &FFTest::open);
@@ -82,6 +87,8 @@ void FFTest::clear()
         delete [] pConvertedSamples;
         m_convertedSamplesInitialized = false;
     }
+
+    m_encodePTS = 0;
 }
 
 void FFTest::init()
@@ -470,16 +477,9 @@ int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFr
 int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 {
     const bool sendToAudio = false;
-    const bool encode = false;
+    const bool encode = true;
 
     qDebug() << m_space << Q_FUNC_INFO;
-
-    if(!m_convertedSamplesInitialized)
-    {
-        pConvertedSamples = new uint8_t*[pEncoderCodecContext->channels];
-        av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
-                         pFrame->nb_samples, pEncoderCodecContext->sample_fmt, 0);
-    }
 
     int response = 0;
 
@@ -544,37 +544,148 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 //        inputFrame->sample_rate = pEncoderCodecContext->sample_rate;
 //        inputFrame->nb_samples = 1024;
 //        av_frame_get_buffer(inputFrame, 0);
-        AVPacket *outputPacket = av_packet_alloc();
-        response = avcodec_send_frame(pEncoderCodecContext, pFrame);
-        while(response >= 0)
+
+        bool continueEncode = true;
+
+        if(!m_convertedSamplesInitialized)
         {
-            response = avcodec_receive_packet(pEncoderCodecContext, outputPacket);
-            if(response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+            pConvertedSamples = new uint8_t*[pEncoderCodecContext->channels];
+            av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
+                             pFrame->nb_samples, pEncoderCodecContext->sample_fmt, 0);
+            m_convertedSamplesInitialized = true;
+        }
+
+        int audioFifoSize0 = av_audio_fifo_size(pAudioFifo);
+        //if(av_audio_fifo_size(pAudioFifo) < pEncoderCodecContext->frame_size)
+        //{
+            int error = swr_convert(pSwrContext,
+                        pConvertedSamples, pFrame->nb_samples,
+                        (const uint8_t**)pFrame->extended_data, pFrame->nb_samples);
+            if(error < 0)
             {
+                qDebug() << m_space << m_space
+                         << "Could not convert decoded frame!";
+                continueEncode = false;
+            }
+            else
+            {
+                qDebug() << m_space << m_space
+                         << "Converted decoded frame!";
+
+                try
+                {
+                    error = av_audio_fifo_realloc(pAudioFifo, audioFifoSize0 + pFrame->nb_samples);
+                }
+                catch(std::exception &e)
+                {
+                    std::cout << "av_audio_fifo_realloc EXCEPTION: " << e.what() << std::endl;
+                }
+                if(error < 0)
+                {
+                    qDebug() << m_space << m_space
+                             << "Could not alloc space to store decoded frame!";
+                }
+                else
+                {
+                    qDebug() << m_space << m_space
+                             << "Allocated space to Store decoded frame!";
+                }
+                int writesize = av_audio_fifo_write(pAudioFifo, (void**)pConvertedSamples, pFrame->nb_samples);
+                if(writesize < pFrame->nb_samples)
+                {
+
+                }
+            }
+        //}
+
+        int trials = 0;
+        int audioFifoSize = av_audio_fifo_size(pAudioFifo);
+        while(audioFifoSize >= pEncoderCodecContext->frame_size)
+        {
+            //1. alloc output frame
+            //const int framesize = FFMIN(av_audio_fifo_size(pAudioFifo), pEncoderCodecContext->frame_size);
+            const int framesize = pEncoderCodecContext->frame_size;
+            AVFrame *output_frame = av_frame_alloc();
+            if(output_frame == nullptr)
+            {
+                qDebug() << m_space << m_space
+                         << "output frame not allocated!";
+                if(++trials < 10)
+                {
+                    continue;
+                }
                 break;
             }
-            else if(response < 0)
+            output_frame->nb_samples = framesize;
+            output_frame->channel_layout = pEncoderCodecContext->channel_layout;
+            output_frame->format = pEncoderCodecContext->sample_fmt;
+            output_frame->sample_rate = pEncoderCodecContext->sample_rate;
+            //?
+            output_frame->pts = m_encodePTS;
+            m_encodePTS += output_frame->nb_samples;
+            //
+
+            int error = av_frame_get_buffer(output_frame, 0);
+            if(error < 0)
             {
                 qDebug() << m_space << m_space
-                         << "Error while receiving packet from encoder: "
-                         << avErr2str(response).c_str();
-                return -1;
+                         << "output frame buffers not allocated!";
+                if(++trials < 10)
+                {
+                    continue;
+                }
+                break;
             }
 
-            outputPacket->stream_index = m_audio_stream_index;
-            av_packet_rescale_ts(outputPacket, pEncoderCodecContext->time_base, pCodecContext->time_base);
-            response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
-            if(response < 0)
+            //2. read output frame from audio fifo
+            int readsize = av_audio_fifo_read(pAudioFifo, (void**)output_frame->data, framesize);
+            if(readsize < framesize)
             {
                 qDebug() << m_space << m_space
-                         << "Error " << response << " while receiving packet from decoder: "
-                         << avErr2str(response).c_str();
-                return -1;
+                         << "Couldn't read from audio fifo!";
+                if(++trials < 10)
+                {
+                    continue;
+                }
+                break;
             }
+            audioFifoSize = av_audio_fifo_size(pAudioFifo);
+
+            //3. encode output frame
+            AVPacket *outputPacket = av_packet_alloc();
+            outputPacket->data = nullptr;
+            outputPacket->size = 0;
+            response = avcodec_send_frame(pEncoderCodecContext, output_frame);
+            while(response >= 0)
+            {
+                response = avcodec_receive_packet(pEncoderCodecContext, outputPacket);
+                if(response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+                {
+                    break;
+                }
+                else if(response < 0)
+                {
+                    qDebug() << m_space << m_space
+                             << "Error while receiving packet from encoder: "
+                             << avErr2str(response).c_str();
+                    return -1;
+                }
+
+                outputPacket->stream_index = 0;//m_audio_stream_index;
+                av_packet_rescale_ts(outputPacket, pEncoderCodecContext->time_base, pCodecContext->time_base);
+                response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
+                if(response < 0)
+                {
+                    qDebug() << m_space << m_space
+                             << "Error " << response << " while receiving packet from decoder: "
+                             << avErr2str(response).c_str();
+                    return -1;
+                }
+            }
+            av_packet_unref(outputPacket);
+            av_packet_free(&outputPacket);
+
         }
-        av_packet_unref(outputPacket);
-        av_packet_free(&outputPacket);
-
     }
 
     return response;
@@ -669,16 +780,16 @@ int FFTest::initEncoder()
     }
     qDebug() << m_space << m_space << "Encoder stream created.";
 
-//    pEncoderCodec = avcodec_find_encoder_by_name("AC3");
+//    pEncoderCodec = avcodec_find_encoder_by_name("ac3");
 //    if(pEncoderCodec == nullptr)
 //    {
 //        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
 //    }
-    //pEncoderCodec = avcodec_find_encoder_by_name("aac");
-    pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
+    pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    //pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
     if(pEncoderCodec == nullptr)
     {
-        //pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
         //pEncoderCodec = avcodec_find_encoder(pCodecContext->codec_id);
         //ONLY for test!
         ////pEncoderCodec = pCodec;
@@ -710,7 +821,7 @@ int FFTest::initEncoder()
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
 
     //test
-    pEncoderCodecContext->profile = FF_PROFILE_AAC_HE_V2;
+    //pEncoderCodecContext->profile = FF_PROFILE_AAC_HE_V2;
     //
 
     pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;

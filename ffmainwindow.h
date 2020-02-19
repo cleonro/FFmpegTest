@@ -20,6 +20,9 @@ public:
     explicit FFMainWindow(QWidget *parent = nullptr);
     ~FFMainWindow();
 
+signals:
+    void appendPlainText(const QString &text);
+
 private slots:
     void on_action_Open_triggered();
 

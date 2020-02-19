@@ -128,6 +128,7 @@ private:
     AVAudioFifo *pAudioFifo;
     uint8_t **pConvertedSamples;
     bool m_convertedSamplesInitialized;
+    int64_t m_encodePTS;
 
 };
 

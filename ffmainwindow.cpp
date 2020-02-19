@@ -9,6 +9,17 @@
 
 static QPlainTextEdit *textOut = nullptr;
 
+FFMainWindow *mainWindow = nullptr;
+
+void appendPlainText(const QString &msg)
+{
+    if(mainWindow == nullptr)
+    {
+        return;
+    }
+    emit mainWindow->appendPlainText(msg);
+}
+
 static QQueue<QString> msgBuffer;
 
 void messageOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
@@ -26,7 +37,8 @@ void messageOutput(QtMsgType type, const QMessageLogContext &context, const QStr
         }
         else
         {
-            textOut->appendPlainText(ms);
+            //textOut->appendPlainText(ms);
+            appendPlainText(ms);
             //std::cout << ms.toStdString() << std::endl;
         }
     }
@@ -55,7 +67,9 @@ FFMainWindow::FFMainWindow(QWidget *parent) :
     m_space("    "),
     ui(new Ui::FFMainWindow)
 {
+    mainWindow = this;
     ui->setupUi(this);
+    connect(this, &FFMainWindow::appendPlainText, ui->output, &QPlainTextEdit::appendPlainText);
 
     textOut = ui->output;
     emptyMsgBuffer();
@@ -81,7 +95,7 @@ void FFMainWindow::on_action_Init_triggered()
 void FFMainWindow::on_action_Open_triggered()
 {
     qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread();
-    m_filePath = QFileDialog::getOpenFileName(this, "Open AAC file", "", tr("AAC files (*.m4a *.mp4)"));
+    m_filePath = QFileDialog::getOpenFileName(this, "Open AAC file", "", tr("AAC files (*.m4a *.mp4 *.aac);; All files (*.*)"));
 
     if(m_filePath.isEmpty())
     {
