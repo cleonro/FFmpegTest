@@ -25,6 +25,10 @@
 /// 6. Google - search "libavcodec get audio sample value" [third result]
 ///     https://steemit.com/programming/@targodan/decoding-audio-files-with-ffmpeg
 ///     https://gist.github.com/targodan/8cef8f2b682a30055aa7937060cd94b7
+///
+/// 7. Google - search "qaudiooutput period size"
+///     https://stackoverflow.com/questions/32049950/realtime-streaming-with-qaudiooutput-qt
+///
 
 
 #include <QApplication>
