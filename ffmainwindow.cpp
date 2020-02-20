@@ -106,3 +106,8 @@ void FFMainWindow::on_action_Open_triggered()
 
     m_fftest->openRequest(m_filePath);
 }
+
+void FFMainWindow::on_action_Stop_triggered()
+{
+    m_fftest->stop();
+}

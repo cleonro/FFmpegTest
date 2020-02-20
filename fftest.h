@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QQueue>
+#include <QMutex>
 
 extern "C"
 {
@@ -75,6 +76,9 @@ public:
     void init();
     void openRequest(QString filePath);
 
+    void stop();
+    bool needToStop();
+
 signals:
     void decodedFrame(QByteArray *buffer, double ptime);
     void openSignal(QString filePath);
@@ -99,6 +103,8 @@ private:
 
 private:
     QThread m_thread;
+    QMutex m_mutex;
+    bool m_stop;
 
     const char *m_space;
 

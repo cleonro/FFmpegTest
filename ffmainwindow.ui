@@ -68,6 +68,7 @@
      <string>&amp;FFmpeg</string>
     </property>
     <addaction name="action_Init"/>
+    <addaction name="action_Stop"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menu_FFmpeg"/>
@@ -81,6 +82,11 @@
   <action name="action_Open">
    <property name="text">
     <string>&amp;Open...</string>
+   </property>
+  </action>
+  <action name="action_Stop">
+   <property name="text">
+    <string>&amp;Stop</string>
    </property>
   </action>
  </widget>

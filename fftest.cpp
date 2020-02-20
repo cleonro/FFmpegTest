@@ -1,6 +1,7 @@
 #include "fftest.h"
 
 #include <QThread>
+#include <QMutexLocker>
 #include <QAudioOutput>
 #include <QAudioFormat>
 #include <QAudioDeviceInfo>
@@ -26,6 +27,7 @@ extern "C" {
 
 FFTest::FFTest(QObject *parent)
     : QObject(parent)
+    , m_stop(false)
     , m_space("    ")
     , m_ffTestOps(this)
     , m_audioDevice(nullptr)
@@ -56,10 +58,23 @@ FFTest::FFTest(QObject *parent)
 
 FFTest::~FFTest()
 {
+    m_stop = true;
     m_thread.quit();
     m_thread.wait();
 
     clear();
+}
+
+void FFTest::stop()
+{
+    QMutexLocker lock(&m_mutex);
+    m_stop = true;
+}
+
+bool FFTest::needToStop()
+{
+    QMutexLocker lock(&m_mutex);
+    return m_stop;
 }
 
 void FFTest::openRequest(QString filePath)
@@ -123,8 +138,8 @@ void FFTest::open(QString filePath)
     qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread()
              << "; working thread: " << &m_thread;
     int status = avformat_open_input(&pFormatContext,
-                                     //"http://radiorivendell.ddns.net:8000/128kbit.mp3",
-                                     filePath.toStdString().c_str(),
+                                     "http://radiorivendell.ddns.net:8000/128kbit.mp3",
+                                     //filePath.toStdString().c_str(),
                                      nullptr, nullptr);
     if(status != 0)
     {
@@ -324,7 +339,7 @@ void FFTest::open(QString filePath)
     initResampler();
     initFifo();
 
-    while(av_read_frame(pFormatContext, pPacket) >= 0)
+    while(av_read_frame(pFormatContext, pPacket) >= 0 && !needToStop())
     {
 
         int packet_stream_index = pPacket->stream_index;
@@ -550,8 +565,10 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
         if(!m_convertedSamplesInitialized)
         {
             pConvertedSamples = new uint8_t*[pEncoderCodecContext->channels];
-            av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
-                             pFrame->nb_samples, pEncoderCodecContext->sample_fmt, 0);
+            int allocatedSamples = av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
+                                                    2048/*pFrame->nb_samples*/, pEncoderCodecContext->sample_fmt, 0);
+            qDebug() << m_space << m_space
+                     << "Allocated space for " << allocatedSamples << " converted samples!";
             m_convertedSamplesInitialized = true;
         }
 
@@ -673,7 +690,8 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
                 outputPacket->stream_index = 0;//m_audio_stream_index;
                 av_packet_rescale_ts(outputPacket, pEncoderCodecContext->time_base, pCodecContext->time_base);
-                response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
+                //response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
+                response = av_write_frame(pEncoderFormatContext, outputPacket);
                 if(response < 0)
                 {
                     qDebug() << m_space << m_space
@@ -723,7 +741,7 @@ void FFTest::initAudio(int freq, int channels)
     }
 
     m_audioOutput.reset(new QAudioOutput(deviceInfo, format));
-    m_audioOutput->setBufferSize(8192);
+    m_audioOutput->setBufferSize(100000);//8192);
     m_audioDevice = m_audioOutput->start();
     int audioBufferSize = m_audioOutput->bufferSize();
     int audioPeriodSize = m_audioOutput->periodSize();
@@ -734,17 +752,17 @@ void FFTest::initAudio(int freq, int channels)
 void FFTest::writeToAudio(const char *buffer, qint64 length)
 {
     int bufferSize = m_audioOutput->bufferSize();
-    int bytesFree = m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
+    int bytesFree = m_audioOutput->bytesFree();//m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
     int perSize = m_audioOutput->periodSize();
-    if(bytesFree == 0)
+    if(bytesFree >= length)
     {
         int bytesWritten = m_audioDevice->write(buffer, length);
         qDebug() << "audio data written " << bytesWritten;
     }
-    else while(bytesFree > 0)
+    else while(bytesFree < length)
     {
-        QThread::currentThread()->msleep(10);
-        bytesFree = m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
+        QThread::currentThread()->msleep(500);
+        bytesFree = m_audioOutput->bytesFree();//m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
         qDebug() << "audio data not written__ " << bytesFree;
     }
     int bytesWritten = m_audioDevice->write(buffer, length);
@@ -762,7 +780,11 @@ int FFTest::initEncoder()
 
     int result = 0;
 
-    result = avformat_alloc_output_context2(&pEncoderFormatContext, nullptr, nullptr, m_outputFileName);
+    result = avformat_alloc_output_context2(&pEncoderFormatContext,
+                                            nullptr,
+                                            nullptr,
+                                            "rtp://127.0.0.1:9003");
+                                            //m_outputFileName);
     if(result < 0 || pEncoderFormatContext == nullptr)
     {
         qDebug() << m_space << m_space
@@ -785,8 +807,8 @@ int FFTest::initEncoder()
 //    {
 //        pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AC3);
 //    }
-    pEncoderCodec = avcodec_find_encoder_by_name("aac");
-    //pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
+    //pEncoderCodec = avcodec_find_encoder_by_name("aac");
+    pEncoderCodec = avcodec_find_encoder_by_name("libfdk_aac");
     if(pEncoderCodec == nullptr)
     {
         pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
@@ -821,7 +843,7 @@ int FFTest::initEncoder()
     pEncoderCodecContext->time_base = AVRational{1, sample_rate};
 
     //test
-    //pEncoderCodecContext->profile = FF_PROFILE_AAC_HE_V2;
+    pEncoderCodecContext->profile = FF_PROFILE_AAC_HE_V2;
     //
 
     pEncoderCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;

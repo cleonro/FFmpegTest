@@ -29,6 +29,10 @@
 /// 7. Google - search "qaudiooutput period size"
 ///     https://stackoverflow.com/questions/32049950/realtime-streaming-with-qaudiooutput-qt
 ///
+/// 8. live streaming with libav [or ffmpeg]
+///
+///     https://blog.mi.hdm-stuttgart.de/index.php/2018/03/21/livestreaming-with-libav-tutorial-part-2/
+///
 
 
 #include <QApplication>

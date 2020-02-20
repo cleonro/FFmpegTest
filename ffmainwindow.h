@@ -24,6 +24,9 @@ signals:
     void appendPlainText(const QString &text);
 
 private slots:
+    void on_action_Stop_triggered();
+
+private slots:
     void on_action_Open_triggered();
 
 private slots:
