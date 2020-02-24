@@ -30,6 +30,10 @@ FFTest::FFTest(QObject *parent)
     , m_stop(false)
     , m_space("    ")
     , m_ffTestOps(this)
+
+    , m_sendToAudio(false)
+    , m_encode(false)
+
     , m_audioDevice(nullptr)
     , pFormatContext(nullptr)
     , pCodec(nullptr)
@@ -54,6 +58,18 @@ FFTest::FFTest(QObject *parent)
     connect(this, &FFTest::openSignal, this, &FFTest::open);
 
     m_thread.start();
+}
+
+bool FFTest::setEncode(bool encode)
+{
+    QMutexLocker lock(&m_mutex);
+    m_encode = encode;
+}
+
+bool FFTest::setSendToAudio(bool sendToAudio)
+{
+    QMutexLocker lock(&m_mutex);
+    m_sendToAudio = sendToAudio;
 }
 
 FFTest::~FFTest()
@@ -135,11 +151,15 @@ void FFTest::open(QString filePath)
 
     clear();
 
+    if(filePath.isEmpty())
+    {
+        filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+    }
+
     qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread()
              << "; working thread: " << &m_thread;
     int status = avformat_open_input(&pFormatContext,
-                                     "http://radiorivendell.ddns.net:8000/128kbit.mp3",
-                                     //filePath.toStdString().c_str(),
+                                     filePath.toStdString().c_str(),
                                      nullptr, nullptr);
     if(status != 0)
     {
@@ -491,9 +511,6 @@ int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFr
 
 int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 {
-    const bool sendToAudio = false;
-    const bool encode = true;
-
     qDebug() << m_space << Q_FUNC_INFO;
 
     int response = 0;
@@ -531,7 +548,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
              << "Bytes per sample " << av_get_bytes_per_sample(pCodecContext->sample_fmt) << "; "
              << " Buffer size " << data_size;
 
-    if(sendToAudio)
+    if(m_sendToAudio)
     {
         QByteArray *byteArray = new QByteArray();;
         //byteArray->setRawData((const char *)pFrame->data[0], data_size);
@@ -550,7 +567,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
     }
 
-    if(encode)
+    if(m_encode)
     {
 //        AVFrame *inputFrame = av_frame_alloc();
 //        inputFrame->format = pEncoderCodecContext->sample_fmt;
@@ -783,8 +800,8 @@ int FFTest::initEncoder()
     result = avformat_alloc_output_context2(&pEncoderFormatContext,
                                             nullptr,
                                             nullptr,
-                                            "rtp://127.0.0.1:9003");
-                                            //m_outputFileName);
+                                            //"rtp://127.0.0.1:9003");
+                                            m_outputFileName);
     if(result < 0 || pEncoderFormatContext == nullptr)
     {
         qDebug() << m_space << m_space
@@ -815,6 +832,8 @@ int FFTest::initEncoder()
         //pEncoderCodec = avcodec_find_encoder(pCodecContext->codec_id);
         //ONLY for test!
         ////pEncoderCodec = pCodec;
+
+        ///pEncoderCodec = avcodec_find_encoder(AV_CODEC_ID_MP3);
     }
     if(pEncoderCodec == nullptr)
     {
@@ -985,7 +1004,7 @@ FFTestOps::FFTestOps(FFTest *ffTest, QObject *parent)
     this->moveToThread(&m_thread);
     m_timer.moveToThread(&m_thread);
     m_timer.setSingleShot(true);
-    connect(&m_timer, &QTimer::timeout, this, &FFTestOps::onTimer);
+//    connect(&m_timer, &QTimer::timeout, this, &FFTestOps::onTimer);
     connect(m_ffTest, &FFTest::decodedFrame, this, &FFTestOps::onDecodedFrame);
 
     m_thread.start();
@@ -999,16 +1018,16 @@ FFTestOps::~FFTestOps()
     m_thread.wait();
 }
 
-void FFTestOps::onInitTimer()
-{
+//void FFTestOps::onInitTimer()
+//{
 
-}
+//}
 
-void FFTestOps::onTimer()
-{
-    AudioFrame af = m_playQueue.dequeue();
-    writeToAudio(af.buffer);
-}
+//void FFTestOps::onTimer()
+//{
+//    AudioFrame af = m_playQueue.dequeue();
+//    writeToAudio(af.buffer);
+//}
 
 void FFTestOps::onDecodedFrame(QByteArray *buffer, double ptime)
 {

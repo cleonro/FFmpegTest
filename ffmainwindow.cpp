@@ -111,3 +111,18 @@ void FFMainWindow::on_action_Stop_triggered()
 {
     m_fftest->stop();
 }
+
+void FFMainWindow::on_actionEncode_toggled(bool arg1)
+{
+    m_fftest->setEncode(arg1);
+}
+
+void FFMainWindow::on_actionSend_to_audio_toggled(bool arg1)
+{
+    m_fftest->setSendToAudio(arg1);
+}
+
+void FFMainWindow::on_actionOpen_Stream_triggered()
+{
+    m_fftest->openRequest("");
+}

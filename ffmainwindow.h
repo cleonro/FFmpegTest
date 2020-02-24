@@ -24,6 +24,15 @@ signals:
     void appendPlainText(const QString &text);
 
 private slots:
+    void on_actionOpen_Stream_triggered();
+
+private slots:
+    void on_actionSend_to_audio_toggled(bool arg1);
+
+private slots:
+    void on_actionEncode_toggled(bool arg1);
+
+private slots:
     void on_action_Stop_triggered();
 
 private slots:

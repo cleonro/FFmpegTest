@@ -46,6 +46,7 @@ set(SRC_FFMPEG_TEST
     ffmain.cpp
     ffmainwindow.h ffmainwindow.cpp ffmainwindow.ui
     fftest.h fftest.cpp
+    ffaudiooutput.h ffaudiooutput.cpp
     )
 
 set(UI_SRC_FFMPEG_TEST

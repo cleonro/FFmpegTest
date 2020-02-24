@@ -62,6 +62,7 @@
      <string>F&amp;ile</string>
     </property>
     <addaction name="action_Open"/>
+    <addaction name="actionOpen_Stream"/>
    </widget>
    <widget class="QMenu" name="menu_FFmpeg">
     <property name="title">
@@ -69,6 +70,8 @@
     </property>
     <addaction name="action_Init"/>
     <addaction name="action_Stop"/>
+    <addaction name="actionEncode"/>
+    <addaction name="actionSend_to_audio"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menu_FFmpeg"/>
@@ -87,6 +90,27 @@
   <action name="action_Stop">
    <property name="text">
     <string>&amp;Stop</string>
+   </property>
+  </action>
+  <action name="actionEncode">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Encode</string>
+   </property>
+  </action>
+  <action name="actionSend_to_audio">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Send to audio</string>
+   </property>
+  </action>
+  <action name="actionOpen_Stream">
+   <property name="text">
+    <string>Open Stream</string>
    </property>
   </action>
  </widget>

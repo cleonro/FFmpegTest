@@ -43,11 +43,11 @@ public:
     ~FFTestOps();
 
 signals:
-    void initTimer();
+//    void initTimer();
 
 public slots:
-    void onTimer();
-    void onInitTimer();
+//    void onTimer();
+//    void onInitTimer();
 
     void onDecodedFrame(QByteArray *buffer, double ptime);
 
@@ -58,6 +58,7 @@ private:
     FFTest *m_ffTest;
 
     QThread m_thread;
+    QMutex m_mutex;
     QTimer m_timer;
 
     double m_lastpTime;
@@ -78,6 +79,9 @@ public:
 
     void stop();
     bool needToStop();
+
+    bool setEncode(bool encode);
+    bool setSendToAudio(bool sendToAudio);
 
 signals:
     void decodedFrame(QByteArray *buffer, double ptime);
@@ -109,6 +113,8 @@ private:
     const char *m_space;
 
     FFTestOps m_ffTestOps;
+    bool m_sendToAudio;
+    bool m_encode;
 
     //audio
     QScopedPointer<QAudioOutput> m_audioOutput;
