@@ -41,9 +41,10 @@ FFTest::FFTest(QObject *parent)
     , pCodecContext(nullptr)
     //, m_outputFileName("FFTest.mp3")
     //, m_outputFileName("FFTest.ac3")
-    , m_outputFileName("FFTest.m4a")
+    //, m_outputFileName("FFTest.m4a")
     //, m_outputFileName("FFTest.aac")
     //, m_outputFileName("FFTest")
+    , m_outputFileName("FFTest.adts")
     , pEncoderFormatContext(nullptr)
     , pEncoderStream(nullptr)
     , pEncoderCodec(nullptr)
@@ -153,7 +154,11 @@ void FFTest::open(QString filePath)
 
     if(filePath.isEmpty())
     {
-        filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+        //MP3 stream
+        //filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+
+        //AAC stream
+        filePath = "http://91.220.63.165:8048/live.aac";
     }
 
     qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread()
