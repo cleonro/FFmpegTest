@@ -22,6 +22,9 @@ extern "C"
     struct SwrContext;
 
     struct AVAudioFifo;
+
+    int hasSBR1(AVCodecContext *codecContext);
+    int hasSBR2(AVCodecContext *codecContext);
 }
 
 class QIODevice;

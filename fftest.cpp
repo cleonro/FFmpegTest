@@ -378,7 +378,20 @@ void FFTest::open(QString filePath)
 //            qDebug() << m_space << m_space << m_space
 //                     << "decode_packet response: " << response;
 
+            qDebug() << m_space << m_space
+                     << "SBR Analysis before avcodec_send_packet:";
+            qDebug() << m_space << m_space << m_space << m_space
+                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
+                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
+
             response = avcodec_send_packet(pCodecContext, pPacket);
+
+            qDebug() << m_space << m_space
+                     << "SBR Analysis after avcodec_send_packet:";
+            qDebug() << m_space << m_space << m_space << m_space
+                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
+                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
+
             if(response < 0)
             {
                 qDebug() << m_space << m_space
