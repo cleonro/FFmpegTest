@@ -91,6 +91,11 @@ void FFTest::stop()
 bool FFTest::needToStop()
 {
     QMutexLocker lock(&m_mutex);
+    static int count = 0;
+    if(++count > 1000)
+    {
+        m_stop = true;
+    }
     return m_stop;
 }
 
@@ -129,7 +134,40 @@ void FFTest::init()
 
     qDebug() << Q_FUNC_INFO;
 
+    unsigned int avFormatVersion = avformat_version();
+    unsigned int avUtilVersion = avutil_version();
+    unsigned int avCodecVersion = avcodec_version();
+
+    unsigned int a = (avFormatVersion & 0xFF); //extract first byte
+    unsigned int b = ((avFormatVersion >> 8) & 0xFF); //extract second byte
+    unsigned int c = ((avFormatVersion >> 16) & 0xFF); //extract third byte
+    unsigned int d = ((avFormatVersion >> 24) & 0xFF); //extract fourth byte
     qDebug() << m_space << avformat_license();
+    qDebug() << m_space << "avformat version: " << avFormatVersion << " - "
+             << d << "."
+             << c << "."
+             << b << "."
+             << a;
+
+    a = (avUtilVersion & 0xFF); //extract first byte
+    b = ((avUtilVersion >> 8) & 0xFF); //extract second byte
+    c = ((avUtilVersion >> 16) & 0xFF); //extract third byte
+    d = ((avUtilVersion >> 24) & 0xFF); //extract fourth byte
+    qDebug() << m_space << "avutil version: " << avUtilVersion << " - "
+             << d << "."
+             << c << "."
+             << b << "."
+             << a;
+
+    a = (avCodecVersion & 0xFF); //extract first byte
+    b = ((avCodecVersion >> 8) & 0xFF); //extract second byte
+    c = ((avCodecVersion >> 16) & 0xFF); //extract third byte
+    d = ((avCodecVersion >> 24) & 0xFF); //extract fourth byte
+    qDebug() << m_space << "avcodec version: " << avCodecVersion << " - "
+             << d << "."
+             << c << "."
+             << b << "."
+             << a;
 
     //deprecated
     //av_register_all();
@@ -156,9 +194,10 @@ void FFTest::open(QString filePath)
     {
         //MP3 stream
         //filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+        filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
 
         //AAC stream
-        filePath = "http://91.220.63.165:8048/live.aac";
+        //filePath = "http://91.220.63.165:8048/live.aac";
     }
 
     qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread()
@@ -364,6 +403,12 @@ void FFTest::open(QString filePath)
     initResampler();
     initFifo();
 
+    int count = 0;
+
+    //initialize sbr collecting callback
+    hasSBR3(pCodecContext);
+    //
+
     while(av_read_frame(pFormatContext, pPacket) >= 0 && !needToStop())
     {
 
@@ -378,19 +423,21 @@ void FFTest::open(QString filePath)
 //            qDebug() << m_space << m_space << m_space
 //                     << "decode_packet response: " << response;
 
-            qDebug() << m_space << m_space
-                     << "SBR Analysis before avcodec_send_packet:";
-            qDebug() << m_space << m_space << m_space << m_space
-                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
-                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
+//            qDebug() << m_space << m_space
+//                     << "SBR Analysis before avcodec_send_packet:";
+//            qDebug() << m_space << m_space << m_space << m_space
+//                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
+//                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
 
+            std::cout << ++count << ". Packet will be sent: ";
             response = avcodec_send_packet(pCodecContext, pPacket);
+            std::cout << ", final sbr result " << hasSBR3(pCodecContext) << std::endl;
 
-            qDebug() << m_space << m_space
-                     << "SBR Analysis after avcodec_send_packet:";
-            qDebug() << m_space << m_space << m_space << m_space
-                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
-                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
+//            qDebug() << m_space << m_space
+//                     << "SBR Analysis after avcodec_send_packet:";
+//            qDebug() << m_space << m_space << m_space << m_space
+//                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
+//                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
 
             if(response < 0)
             {
@@ -453,6 +500,12 @@ void FFTest::open(QString filePath)
 
     av_packet_free(&pPacket);
     av_frame_free(&pFrame);
+
+    //?
+    if(m_encode)
+    {
+        checkCloseFifo();
+    }
 
     //encoder
     {
@@ -673,7 +726,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
             output_frame->format = pEncoderCodecContext->sample_fmt;
             output_frame->sample_rate = pEncoderCodecContext->sample_rate;
             //?
-            output_frame->pts = m_encodePTS;
+            output_frame->pts = pEncoderCodecContext->initial_padding + m_encodePTS;
             m_encodePTS += output_frame->nb_samples;
             //
 
@@ -742,6 +795,100 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
     }
 
     return response;
+}
+
+void FFTest::checkCloseFifo()
+{
+    int response = 0;
+
+    int trials = 0;
+    int audioFifoSize = av_audio_fifo_size(pAudioFifo);
+    while(audioFifoSize > 0)
+    {
+        //1. alloc output frame
+        //const int framesize = FFMIN(av_audio_fifo_size(pAudioFifo), pEncoderCodecContext->frame_size);
+        const int framesize = pEncoderCodecContext->frame_size;
+        AVFrame *output_frame = av_frame_alloc();
+        if(output_frame == nullptr)
+        {
+            qDebug() << m_space << m_space
+                     << "FFTest::checkCloseFifo - output frame not allocated!";
+            if(++trials < 10)
+            {
+                continue;
+            }
+            break;
+        }
+        output_frame->nb_samples = framesize;
+        output_frame->channel_layout = pEncoderCodecContext->channel_layout;
+        output_frame->format = pEncoderCodecContext->sample_fmt;
+        output_frame->sample_rate = pEncoderCodecContext->sample_rate;
+        //?
+        output_frame->pts = pEncoderCodecContext->initial_padding + m_encodePTS;
+        m_encodePTS += output_frame->nb_samples;
+        //
+
+        int error = av_frame_get_buffer(output_frame, 0);
+        if(error < 0)
+        {
+            qDebug() << m_space << m_space
+                     << "output frame buffers not allocated!";
+            if(++trials < 10)
+            {
+                continue;
+            }
+            break;
+        }
+
+        //2. read output frame from audio fifo
+        int readsize = av_audio_fifo_read(pAudioFifo, (void**)output_frame->data, framesize);
+        if(readsize <= 0)//< framesize)
+        {
+            qDebug() << m_space << m_space
+                     << "Couldn't read from audio fifo!";
+            if(++trials < 10)
+            {
+                continue;
+            }
+            break;
+        }
+        audioFifoSize = av_audio_fifo_size(pAudioFifo);
+
+        //3. encode output frame
+        AVPacket *outputPacket = av_packet_alloc();
+        outputPacket->data = nullptr;
+        outputPacket->size = 0;
+        response = avcodec_send_frame(pEncoderCodecContext, output_frame);
+        while(response >= 0)
+        {
+            response = avcodec_receive_packet(pEncoderCodecContext, outputPacket);
+            if(response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+            {
+                break;
+            }
+            else if(response < 0)
+            {
+                qDebug() << m_space << m_space
+                         << "Error while receiving packet from encoder: "
+                         << avErr2str(response).c_str();
+                return;// -1;
+            }
+
+            outputPacket->stream_index = 0;//m_audio_stream_index;
+            av_packet_rescale_ts(outputPacket, pEncoderCodecContext->time_base, pCodecContext->time_base);
+            //response = av_interleaved_write_frame(pEncoderFormatContext, outputPacket);
+            response = av_write_frame(pEncoderFormatContext, outputPacket);
+            if(response < 0)
+            {
+                qDebug() << m_space << m_space
+                         << "Error " << response << " while receiving packet from decoder: "
+                         << avErr2str(response).c_str();
+                return;// -1;
+            }
+        }
+        av_packet_unref(outputPacket);
+        av_packet_free(&outputPacket);
+    }
 }
 
 std::string FFTest::avErr2str(int errnum)

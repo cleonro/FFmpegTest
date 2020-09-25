@@ -25,6 +25,7 @@ extern "C"
 
     int hasSBR1(AVCodecContext *codecContext);
     int hasSBR2(AVCodecContext *codecContext);
+    int hasSBR3(AVCodecContext *codecContext);
 }
 
 class QIODevice;
@@ -107,6 +108,8 @@ private:
     int initEncoder();
     int initResampler();
     int initFifo();
+
+    void checkCloseFifo();
 
 private:
     QThread m_thread;

@@ -48,3 +48,38 @@ int hasSBR2(AVCodecContext *codecContext)
 
     return res;
 }
+
+static int sbr_callback_set = 0;
+
+static int sbr_callback_result = -1;
+
+static void sbr_callback(int step)
+{
+    sbr_callback_result = step;
+    printf("->%d", step);
+}
+
+int hasSBR3(AVCodecContext *codecContext)
+{
+    int res = -1;
+
+    if(!codecContext || !codecContext->priv_data)
+    {
+        return res;
+    }
+
+    AACContext *aacContext = codecContext->priv_data;
+    if(sbr_callback_set == 0)
+    {
+        sbr_callback_set = 1;
+        aacContext->custom_sbr_callback = sbr_callback;
+        return 0;
+    }
+
+    res = sbr_callback_result;
+    sbr_callback_result = -1;
+
+    //printf("\n");
+
+    return res;
+}
