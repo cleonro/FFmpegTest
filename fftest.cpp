@@ -61,13 +61,13 @@ FFTest::FFTest(QObject *parent)
     m_thread.start();
 }
 
-bool FFTest::setEncode(bool encode)
+void FFTest::setEncode(bool encode)
 {
     QMutexLocker lock(&m_mutex);
     m_encode = encode;
 }
 
-bool FFTest::setSendToAudio(bool sendToAudio)
+void FFTest::setSendToAudio(bool sendToAudio)
 {
     QMutexLocker lock(&m_mutex);
     m_sendToAudio = sendToAudio;
@@ -91,11 +91,11 @@ void FFTest::stop()
 bool FFTest::needToStop()
 {
     QMutexLocker lock(&m_mutex);
-    static int count = 0;
-    if(++count > 1000)
-    {
-        m_stop = true;
-    }
+//    static int count = 0;
+//    if(++count > 1000)
+//    {
+//        m_stop = true;
+//    }
     return m_stop;
 }
 
@@ -185,6 +185,8 @@ void FFTest::init()
 
 void FFTest::open(QString filePath)
 {
+    m_stop = false;
+
     int audioFreq = 0;
     int audioChannels = 0;
 
@@ -194,7 +196,8 @@ void FFTest::open(QString filePath)
     {
         //MP3 stream
         //filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
-        filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+        //filePath = "http://radiorivendell.ddns.net:8000/128kbit.mp3";
+        filePath = "http://play.radiorivendell.com/radio/8000/radio.mp3";
 
         //AAC stream
         //filePath = "http://91.220.63.165:8048/live.aac";
@@ -252,7 +255,7 @@ void FFTest::open(QString filePath)
                  << "AVStream::duration "
                  << pFormatContext->streams[i]->duration;
 
-        AVCodec *pLocalCodec = nullptr;
+        const AVCodec *pLocalCodec = nullptr;
         pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
         if(pLocalCodec == nullptr)
         {
@@ -294,12 +297,12 @@ void FFTest::open(QString filePath)
             }
 
             qDebug() << m_space << m_space << m_space
-                     << "Audio Codec - channels: " << pLocalCodecParameters->channels;
+                     << "Audio Codec - channels: " << pLocalCodecParameters->ch_layout.nb_channels;
             qDebug() << m_space << m_space << m_space
                      << "Audio Codec - sample rate: " << pLocalCodecParameters->sample_rate;
 
             audioFreq = pLocalCodecParameters->sample_rate;
-            audioChannels = pLocalCodecParameters->channels;
+            audioChannels = pLocalCodecParameters->ch_layout.nb_channels;
 
             break;
 
@@ -569,7 +572,7 @@ int FFTest::decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFr
 
             qDebug() << m_space << m_space
                      << "Frame " << pCodecContext->frame_number
-                     << ", " << pCodecContext->channels << " channels, "
+                     << ", " << pCodecContext->ch_layout.nb_channels << " channels, "
                      << pFrame->nb_samples << " samples, "
                      << pCodecContext->sample_fmt << " sample_fmt";
 
@@ -589,7 +592,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
     qDebug() << m_space << m_space
              << "Frame " << pCodecContext->frame_number
              << " [codec context], "
-             << pCodecContext->channels << " channels [codec context], "
+             << pCodecContext->ch_layout.nb_channels << " channels [codec context], "
              << pFrame->nb_samples << " samples [frame], "
              << pCodecContext->sample_fmt << " sample_fmt [codec context], "
              << pFrame->pts << " pts[frame],"
@@ -604,7 +607,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 
 
     int data_size = av_samples_get_buffer_size(nullptr,
-                               pCodecContext->channels,
+                               pCodecContext->ch_layout.nb_channels,
                                pFrame->nb_samples,
                                pCodecContext->sample_fmt,
                                1);
@@ -614,25 +617,39 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
              << "frame.nb_sample " << pFrame->nb_samples << "; "
              << " Format " << av_get_sample_fmt_name(pCodecContext->sample_fmt) << "; "
              << " Format is planar " << av_sample_fmt_is_planar(pCodecContext->sample_fmt) << "; "
-             << " Channels " << pCodecContext->channels << "; "
+             << " Channels " << pCodecContext->ch_layout.nb_channels << "; "
              << " Codec frame size " << pCodecContext->frame_size << "; "
              << "Bytes per sample " << av_get_bytes_per_sample(pCodecContext->sample_fmt) << "; "
              << " Buffer size " << data_size;
 
     if(m_sendToAudio)
     {
-        QByteArray *byteArray = new QByteArray();;
+        QByteArray byteArray;
         //byteArray->setRawData((const char *)pFrame->data[0], data_size);
-        byteArray->setRawData((const char *)pFrame->extended_data[0], data_size);
-        byteArray->setRawData((const char *)pFrame->extended_data[0], data_size / 2);
-        byteArray->reserve(data_size);
-        for(int i = 0; i < data_size / 2; ++i)
+        //byteArray->setRawData((const char *)pFrame->extended_data[0], data_size);
+        //byteArray->setRawData((const char *)pFrame->extended_data[0], data_size / 2);
+        byteArray.reserve(data_size);
+//        for(int i = 0; i < data_size / 2; ++i)
+//        {
+//            byteArray->push_back(pFrame->data[0][i] - 127);
+//            byteArray->push_back(pFrame->data[1][i] - 127);
+//        }
+
+        // recalculate this for correct nb of channels and for sample format
+        for(int i = 0; i < pFrame->nb_samples; ++i)
         {
-            byteArray->push_back(pFrame->data[0][i] - 127);
-            byteArray->push_back(pFrame->data[1][i] - 127);
+            for(int j = 0; j < pCodecContext->ch_layout.nb_channels; ++j)
+            {
+                for(int k = 0; k < 4/*pCodecContext->sample_fmt / pCodecContext->ch_layout.nb_channels*/; ++k)
+                {
+                    int index = i * 4 + k;
+                    byteArray.push_back(pFrame->data[j][index]);
+                }
+            }
         }
-        int q_data_size = byteArray->size();
-        writeToAudio(byteArray->data(), q_data_size);
+
+        int q_data_size = byteArray.size();
+        writeToAudio(byteArray.data(), q_data_size);
         //double pTime = (pFrame->pts + 0.0) / (pCodecContext->time_base.den + 0.0);
         //emit decodedFrame(byteArray, pTime);
 
@@ -648,12 +665,12 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
 //        inputFrame->nb_samples = 1024;
 //        av_frame_get_buffer(inputFrame, 0);
 
-        bool continueEncode = true;
+        //bool continueEncode = true;
 
         if(!m_convertedSamplesInitialized)
         {
-            pConvertedSamples = new uint8_t*[pEncoderCodecContext->channels];
-            int allocatedSamples = av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->channels,
+            pConvertedSamples = new uint8_t*[pEncoderCodecContext->ch_layout.nb_channels];
+            int allocatedSamples = av_samples_alloc(pConvertedSamples, nullptr, pEncoderCodecContext->ch_layout.nb_channels,
                                                     2048/*pFrame->nb_samples*/, pEncoderCodecContext->sample_fmt, 0);
             qDebug() << m_space << m_space
                      << "Allocated space for " << allocatedSamples << " converted samples!";
@@ -670,7 +687,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
             {
                 qDebug() << m_space << m_space
                          << "Could not convert decoded frame!";
-                continueEncode = false;
+                //continueEncode = false;
             }
             else
             {
@@ -722,7 +739,7 @@ int FFTest::doSomething(AVCodecContext *pCodecContext, AVFrame *pFrame)
                 break;
             }
             output_frame->nb_samples = framesize;
-            output_frame->channel_layout = pEncoderCodecContext->channel_layout;
+            output_frame->ch_layout = pEncoderCodecContext->ch_layout;
             output_frame->format = pEncoderCodecContext->sample_fmt;
             output_frame->sample_rate = pEncoderCodecContext->sample_rate;
             //?
@@ -820,7 +837,7 @@ void FFTest::checkCloseFifo()
             break;
         }
         output_frame->nb_samples = framesize;
-        output_frame->channel_layout = pEncoderCodecContext->channel_layout;
+        output_frame->ch_layout = pEncoderCodecContext->ch_layout;
         output_frame->format = pEncoderCodecContext->sample_fmt;
         output_frame->sample_rate = pEncoderCodecContext->sample_rate;
         //?
@@ -931,7 +948,7 @@ void FFTest::initAudio(int freq, int channels)
              << "; period size: " << audioPeriodSize;
 }
 
-void FFTest::writeToAudio(const char *buffer, qint64 length)
+void FFTest::writeToAudio__(const char *buffer, qint64 length)
 {
     int bufferSize = m_audioOutput->bufferSize();
     int bytesFree = m_audioOutput->bytesFree();//m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
@@ -943,17 +960,43 @@ void FFTest::writeToAudio(const char *buffer, qint64 length)
     }
     else while(bytesFree < length)
     {
-        QThread::currentThread()->msleep(500);
+        QThread::currentThread()->msleep(10);
         bytesFree = m_audioOutput->bytesFree();//m_audioOutput->bufferSize() - m_audioOutput->bytesFree();
         qDebug() << "audio data not written__ " << bytesFree;
     }
     int bytesWritten = m_audioDevice->write(buffer, length);
     qDebug() << "audio data written " << bytesWritten;
+    if(bytesWritten < length)
+    {
+        qDebug() << "WARNING: unwritten bytes left!";
+        writeToAudio(buffer + bytesWritten, length - bytesWritten);
+    }
 
 //    m_audioDevice->write(buffer, perSize);
 //    m_audioDevice->write(buffer + perSize, length - perSize);
 
     //QThread::currentThread()->msleep(1000.0 * 0.5 * 1024.0 / 44100.0);
+    QThread::currentThread()->msleep(1000.0 * 1024.0 / 44100.0);
+}
+
+void FFTest::writeToAudio(const char *buffer, qint64 length)
+{
+    int bufferSize = m_audioOutput->bufferSize();
+    int perSize = m_audioOutput->periodSize();
+    (void)bufferSize;
+    (void)perSize;
+
+    int bytesFree = m_audioOutput->bytesFree();
+    int totalWrittenBytes = 0;
+    while(totalWrittenBytes < length)
+    {
+        int lengthLeft = length - totalWrittenBytes;
+        int bytesToWrite = bytesFree > lengthLeft ? lengthLeft : bytesFree;
+
+        int bytesWritten = m_audioDevice->write(buffer + totalWrittenBytes, bytesToWrite);
+        totalWrittenBytes += bytesWritten;
+        bytesFree = m_audioOutput->bytesFree();
+    }
 }
 
 int FFTest::initEncoder()
@@ -1019,8 +1062,8 @@ int FFTest::initEncoder()
     int OUTPUT_BIT_RATE = 96000;
     int sample_rate = pCodecContext->sample_rate;//44100;
 
-    pEncoderCodecContext->channels = OUTPUT_CHANNELS;
-    pEncoderCodecContext->channel_layout = av_get_default_channel_layout(OUTPUT_CHANNELS);
+    pEncoderCodecContext->ch_layout.nb_channels = OUTPUT_CHANNELS;
+    av_channel_layout_default(&pEncoderCodecContext->ch_layout, OUTPUT_CHANNELS);
     pEncoderCodecContext->sample_rate = sample_rate;
     pEncoderCodecContext->sample_fmt = pEncoderCodec->sample_fmts[0];//pCodec->sample_fmts[0];//AV_SAMPLE_FMT_FLT;//pEncoderCodec->sample_fmts[0];
     pEncoderCodecContext->bit_rate = OUTPUT_BIT_RATE;
@@ -1108,21 +1151,27 @@ int FFTest::initResampler()
 
     int result = 0;
 
-    pSwrContext = swr_alloc_set_opts(nullptr,
-                                     av_get_default_channel_layout(pEncoderCodecContext->channels),
-                                     pEncoderCodecContext->sample_fmt,
-                                     pEncoderCodecContext->sample_rate,
+    AVChannelLayout defaultOutLayout;
+    av_channel_layout_default(&defaultOutLayout, pEncoderCodecContext->ch_layout.nb_channels);
+    AVChannelLayout defaultInLayout;
+    av_channel_layout_default(&defaultInLayout, pCodecContext->ch_layout.nb_channels);
 
-                                     av_get_default_channel_layout(pCodecContext->channels),
-                                     pCodecContext->sample_fmt,
-                                     pCodecContext->sample_rate,
-                                     0,
-                                     nullptr);
-    if(pSwrContext == nullptr)
+    int swrContextAllocated = swr_alloc_set_opts2(&pSwrContext,
+                                                    &defaultOutLayout,
+                                                    pEncoderCodecContext->sample_fmt,
+                                                    pEncoderCodecContext->sample_rate,
+                                                    &defaultInLayout,
+                                                    pCodecContext->sample_fmt,
+                                                    pCodecContext->sample_rate,
+                                                    0,
+                                                    nullptr
+                                                    );
+
+    if(pSwrContext == nullptr || swrContextAllocated > 0)
     {
         qDebug() << m_space << m_space
                  << "Could not allocate resample context!";
-        return AVERROR(ENOMEM);
+        return AVERROR(swrContextAllocated);
     }
     qDebug() << m_space << m_space
              << "Allocated resample context!";
@@ -1148,7 +1197,7 @@ int FFTest::initFifo()
 
     int result = 0;
 
-    pAudioFifo = av_audio_fifo_alloc(pEncoderCodecContext->sample_fmt, pEncoderCodecContext->channels, 1);
+    pAudioFifo = av_audio_fifo_alloc(pEncoderCodecContext->sample_fmt, pEncoderCodecContext->ch_layout.nb_channels, 1);
     if(pAudioFifo == nullptr)
     {
         qDebug() << m_space << m_space

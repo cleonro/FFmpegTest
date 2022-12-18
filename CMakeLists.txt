@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.0)
+
 project(FFmpegTest)
 
 find_package(Qt5Widgets REQUIRED)

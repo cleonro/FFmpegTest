@@ -84,8 +84,8 @@ public:
     void stop();
     bool needToStop();
 
-    bool setEncode(bool encode);
-    bool setSendToAudio(bool sendToAudio);
+    void setEncode(bool encode);
+    void setSendToAudio(bool sendToAudio);
 
 signals:
     void decodedFrame(QByteArray *buffer, double ptime);
@@ -103,6 +103,7 @@ private:
     std::string avErr2str(int errnum);
 
     void initAudio(int freq, int channels);
+    void writeToAudio__(const char *buffer, qint64 length);
     void writeToAudio(const char *buffer, qint64 length);
 
     int initEncoder();
@@ -131,7 +132,7 @@ private:
 
     //ffmpeg specifics;
     AVFormatContext *pFormatContext;
-    AVCodec *pCodec;
+    const AVCodec *pCodec;
     AVCodecParameters *pCodecParameters;
     AVCodecContext *pCodecContext;
 
@@ -139,7 +140,7 @@ private:
     const char *m_outputFileName;
     AVFormatContext *pEncoderFormatContext;
     AVStream *pEncoderStream;
-    AVCodec *pEncoderCodec;
+    const AVCodec *pEncoderCodec;
     AVCodecContext *pEncoderCodecContext;
 
     SwrContext *pSwrContext;
