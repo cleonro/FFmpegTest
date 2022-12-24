@@ -29,7 +29,7 @@ FFTest::FFTest(QObject *parent)
     : QObject(parent)
     , m_stop(false)
     , m_space("    ")
-    , m_ffTestOps(this)
+    //, m_ffTestOps(this)
 
     , m_sendToAudio(false)
     , m_encode(false)
@@ -58,7 +58,7 @@ FFTest::FFTest(QObject *parent)
     this->moveToThread(&m_thread);
     connect(this, &FFTest::openSignal, this, &FFTest::open);
 
-    m_thread.start();
+    //m_thread.start();
 }
 
 void FFTest::setEncode(bool encode)
@@ -82,10 +82,21 @@ FFTest::~FFTest()
     clear();
 }
 
+void FFTest::startThread()
+{
+    m_thread.start();
+}
+
 void FFTest::stop()
 {
     QMutexLocker lock(&m_mutex);
     m_stop = true;
+}
+
+void FFTest::openRequest(QString filePath)
+{
+    qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread();
+    emit openSignal(filePath);
 }
 
 bool FFTest::needToStop()
@@ -97,12 +108,6 @@ bool FFTest::needToStop()
 //        m_stop = true;
 //    }
     return m_stop;
-}
-
-void FFTest::openRequest(QString filePath)
-{
-    qDebug() << Q_FUNC_INFO << " -> current thread: " << QThread::currentThread();
-    emit openSignal(filePath);
 }
 
 void FFTest::clear()
@@ -186,6 +191,8 @@ void FFTest::init()
 void FFTest::open(QString filePath)
 {
     m_stop = false;
+
+    emit this->state(State::OPENING);
 
     int audioFreq = 0;
     int audioChannels = 0;
@@ -326,6 +333,7 @@ void FFTest::open(QString filePath)
     if(pCodecContext == nullptr)
     {
         qDebug() << m_space << m_space << "failed to allocated memory for AVCodecContext";
+        emit state(State::IDLE);
         return;
     }
 
@@ -335,6 +343,7 @@ void FFTest::open(QString filePath)
     if(status < 0)
     {
         qDebug() << m_space << m_space << "failed to copy codec params to codec context";
+        emit state(State::IDLE);
         return;
     }
 
@@ -344,6 +353,7 @@ void FFTest::open(QString filePath)
     if(status < 0)
     {
         qDebug() << m_space << m_space << "failed to open codec through avcodec_open2";
+        emit state(State::IDLE);
         return;
     }
 
@@ -353,6 +363,7 @@ void FFTest::open(QString filePath)
     if(pFrame == nullptr)
     {
         qDebug() << m_space << m_space << "failed to allocated memory for AVFrame";
+        emit state(State::IDLE);
         return;
     }
 
@@ -362,13 +373,14 @@ void FFTest::open(QString filePath)
     if(pPacket == nullptr)
     {
         qDebug() << m_space << m_space << "failed to allocated memory for AVPacket";
+        emit state(State::IDLE);
         return;
     }
 
     qDebug() << m_space << m_space << "Allocated memory for AVPacket";
 
     int response = 0;
-    int how_many_packets_to_process = 8; //?
+//    int how_many_packets_to_process = 8; //?
 
     //from https://github.com/leixiaohua1020/simplest_ffmpeg_audio_player/blob/master/simplest_ffmpeg_audio_decoder/simplest_ffmpeg_audio_decoder.cpp
     //{
@@ -409,11 +421,13 @@ void FFTest::open(QString filePath)
     int count = 0;
 
     //initialize sbr collecting callback
+#if TEST_SBR
     hasSBR3(pCodecContext);
-    //
+#endif
 
     while(av_read_frame(pFormatContext, pPacket) >= 0 && !needToStop())
     {
+        emit state(State::DECODE);
 
         int packet_stream_index = pPacket->stream_index;
         if(packet_stream_index == m_audio_stream_index)
@@ -432,9 +446,13 @@ void FFTest::open(QString filePath)
 //                     << "hasSBR1 -> " << hasSBR1(pCodecContext) <<"; "
 //                     << "hasSBR2 -> " << hasSBR2(pCodecContext);
 
+#if TEST_SBR
             std::cout << ++count << ". Packet will be sent: ";
+#endif
             response = avcodec_send_packet(pCodecContext, pPacket);
+#if TEST_SBR
             std::cout << ", final sbr result " << hasSBR3(pCodecContext) << std::endl;
+#endif
 
 //            qDebug() << m_space << m_space
 //                     << "SBR Analysis after avcodec_send_packet:";
@@ -465,7 +483,7 @@ void FFTest::open(QString filePath)
                                  << "avcodec_receive_frame: AVERROR_EOF";
                     }
                 }
-                else if(response < 0)
+                else
                 {
                     qDebug() << m_space << m_space
                              << "Error while receiving a frame from the decoder: "
@@ -476,10 +494,10 @@ void FFTest::open(QString filePath)
             doSomething(pCodecContext, pFrame);
 
 
-            if(--how_many_packets_to_process <= 0)
-            {
-                //break;
-            }
+//            if(--how_many_packets_to_process <= 0)
+//            {
+//                //break;
+//            }
 
             //from https://github.com/leixiaohua1020/simplest_ffmpeg_audio_player/blob/master/simplest_ffmpeg_audio_decoder/simplest_ffmpeg_audio_decoder.cpp
             //{
@@ -497,12 +515,15 @@ void FFTest::open(QString filePath)
 
             //}
 
+            av_frame_unref(pFrame);
             av_packet_unref(pPacket);
         }
     }
 
     av_packet_free(&pPacket);
     av_frame_free(&pFrame);
+
+    emit state(State::IDLE);
 
     //?
     if(m_encode)
@@ -1209,7 +1230,7 @@ int FFTest::initFifo()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
+/*
 FFTestOps::FFTestOps(FFTest *ffTest, QObject *parent)
     : QObject(parent)
     , m_ffTest(ffTest)
@@ -1266,3 +1287,4 @@ void FFTestOps::writeToAudio(QByteArray *buffer)
     m_ffTest->m_audioDevice->write(buffer->data(), buffer->length());
     //delete buffer;
 }
+*/

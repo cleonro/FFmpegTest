@@ -1,6 +1,5 @@
 #include "ffmainwindow.h"
 #include "ui_ffmainwindow.h"
-#include "fftest.h"
 
 #include <QQueue>
 #include <QFileDialog>
@@ -69,12 +68,19 @@ FFMainWindow::FFMainWindow(QWidget *parent) :
 {
     mainWindow = this;
     ui->setupUi(this);
-    connect(this, &FFMainWindow::appendPlainText, ui->output, &QPlainTextEdit::appendPlainText);
+    connect(this, &FFMainWindow::appendPlainText, this, &FFMainWindow::onAppendPlainText);
 
     textOut = ui->output;
     emptyMsgBuffer();
 
     m_fftest.reset(new FFTest());
+
+    // Why this is not working? (the same with Qt::QueuedConnection)
+    // connect(m_fftest.get(), &FFTest::state, this, &FFMainWindow::onFFTestState);
+    connect(m_fftest.get(), &FFTest::state, this, &FFMainWindow::onFFTestState, Qt::BlockingQueuedConnection);
+    m_fftest->startThread();
+
+    m_output = ui->output;
 }
 
 FFMainWindow::~FFMainWindow()
@@ -125,4 +131,33 @@ void FFMainWindow::on_actionSend_to_audio_toggled(bool arg1)
 void FFMainWindow::on_actionOpen_Stream_triggered()
 {
     m_fftest->openRequest("");
+}
+
+void FFMainWindow::onFFTestState(FFTest::State state)
+{
+    switch (state)
+    {
+
+    case FFTest::State::OPENING:
+        m_output = ui->output;
+        m_output->clear();
+        break;
+
+    case FFTest::State::DECODE:
+        m_output = ui->output_2;
+        m_output->clear();
+        break;
+
+    case FFTest::State::IDLE:
+        m_output = ui->output;
+        break;
+
+    default:
+        break;
+    }
+}
+
+void FFMainWindow::onAppendPlainText(const QString &text)
+{
+    m_output->appendPlainText(text);
 }

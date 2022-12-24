@@ -31,6 +31,9 @@ extern "C"
 class QIODevice;
 class QAudioOutput;
 
+#define TEST_SBR 0
+
+/*
 class FFTest;
 
 class FFTestOps : public QObject
@@ -68,21 +71,32 @@ private:
     double m_lastpTime;
     QQueue<AudioFrame> m_playQueue;
 };
+*/
 
 class FFTest : public QObject
 {
     friend class FFTestOps;
 
     Q_OBJECT
+
+public:
+    enum class State
+    {
+        IDLE,
+        OPENING,
+        DECODE
+    };
+
 public:
     explicit FFTest(QObject *parent = nullptr);
     ~FFTest();
+
+    void startThread();
 
     void init();
     void openRequest(QString filePath);
 
     void stop();
-    bool needToStop();
 
     void setEncode(bool encode);
     void setSendToAudio(bool sendToAudio);
@@ -90,11 +104,14 @@ public:
 signals:
     void decodedFrame(QByteArray *buffer, double ptime);
     void openSignal(QString filePath);
+    void state(FFTest::State);
 
 private slots:
     void open(QString filePath);
 
 private:
+    bool needToStop();
+
     void clear();
     int decode_packet(AVPacket *pPacket, AVCodecContext *pCodecContext, AVFrame *pFrame);
 
@@ -119,7 +136,7 @@ private:
 
     const char *m_space;
 
-    FFTestOps m_ffTestOps;
+    //FFTestOps m_ffTestOps;
     bool m_sendToAudio;
     bool m_encode;
 
