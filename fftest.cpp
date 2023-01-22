@@ -28,6 +28,7 @@ extern "C" {
 FFTest::FFTest(QObject *parent)
     : QObject(parent)
     , m_stop(false)
+    , m_closing(false)
     , m_space("    ")
     //, m_ffTestOps(this)
 
@@ -75,10 +76,10 @@ void FFTest::setSendToAudio(bool sendToAudio)
 
 FFTest::~FFTest()
 {
-    m_stop = true;
+    m_closing = true;
+    stop();
     m_thread.quit();
     m_thread.wait();
-
     clear();
 }
 
@@ -177,6 +178,8 @@ void FFTest::init()
     //deprecated
     //av_register_all();
 
+    return;
+
     pFormatContext = avformat_alloc_context();
     if(pFormatContext == nullptr)
     {
@@ -193,6 +196,8 @@ void FFTest::open(QString filePath)
     m_stop = false;
 
     emit this->state(State::OPENING);
+
+    init();
 
     int audioFreq = 0;
     int audioChannels = 0;
@@ -449,6 +454,9 @@ void FFTest::open(QString filePath)
 #if TEST_SBR
             std::cout << ++count << ". Packet will be sent: ";
 #endif
+            // metadata
+            findMetadata(pPacket);
+
             response = avcodec_send_packet(pCodecContext, pPacket);
 #if TEST_SBR
             std::cout << ", final sbr result " << hasSBR3(pCodecContext) << std::endl;
@@ -523,7 +531,10 @@ void FFTest::open(QString filePath)
     av_packet_free(&pPacket);
     av_frame_free(&pFrame);
 
-    emit state(State::IDLE);
+    if(!m_closing)
+    {
+        emit state(State::IDLE);
+    }
 
     //?
     if(m_encode)
@@ -928,6 +939,36 @@ void FFTest::checkCloseFifo()
         av_packet_free(&outputPacket);
     }
 }
+
+void FFTest::findMetadata(AVPacket *pPacket)
+{
+    //AV_PKT_DATA_STRINGS_METADATA
+    //AV_PKT_DATA_METADATA_UPDATE
+    if(pPacket == nullptr || pPacket->side_data_elems == 0)
+    {
+        return;
+    }
+
+    qDebug() << "Found av packet with side data...";
+
+    for(int i = 0; i < pPacket->side_data_elems; ++i)
+    {
+        AVPacketSideData sideData = pPacket->side_data[i];
+        if(sideData.type != AV_PKT_DATA_STRINGS_METADATA || sideData.type != AV_PKT_DATA_METADATA_UPDATE)
+        {
+            continue;
+        }
+
+        qDebug() << "Found av packet metadata...";
+        QString metadata;
+        for(size_t k = 0; k < sideData.size; ++k)
+        {
+            metadata += static_cast<char>(sideData.data[k]);
+        }
+
+        qDebug() << "av packet metadata string: " << metadata;
+    }
+ }
 
 std::string FFTest::avErr2str(int errnum)
 {

@@ -129,10 +129,13 @@ private:
 
     void checkCloseFifo();
 
+    void findMetadata(AVPacket* pPacket);
+
 private:
     QThread m_thread;
     QMutex m_mutex;
     bool m_stop;
+    bool m_closing;
 
     const char *m_space;
 
